@@ -1,0 +1,49 @@
+<!doctype html>
+<html lang="en">
+	<head>
+		<meta charset="utf-8" />
+		<meta name="viewport" content="width=device-width, initial-scale=1" />
+		<title>Trivia — Leaderboard</title>
+		<link rel="stylesheet" href="styles.css" />
+	</head>
+	<body class="board">
+		<!-- The ?view=leaderboard client. Opened as a tab from the host, torn out to
+		     the TV once at setup, alt-tabbed to between rounds. It's a moment, not
+		     an ambient display. Ties share the average of the tied ranks; scores
+		     alongside ranks are a host toggle (default on). In the real app this is
+		     its own socket client; in the mock it reads what host.html publishes to
+		     localStorage and updates on the storage event. -->
+		<div class="card">
+			<p class="brand">Trivia</p>
+			<p class="sub" id="sub">Standings</p>
+			<table class="board-table"><tbody id="board"></tbody></table>
+			<p class="note" id="empty" style="display: none">Nothing yet — open <a href="host.html">host.html</a> in another tab and play a question.</p>
+		</div>
+		<script>
+			const fmtRank = (r) => (Number.isInteger(r) ? String(r) : r.toFixed(1));
+			function render() {
+				let d = null;
+				try {
+					d = JSON.parse(localStorage.getItem("mockStandings") || "null");
+				} catch {}
+				const tb = document.getElementById("board");
+				tb.innerHTML = "";
+				document.getElementById("empty").style.display = d ? "none" : "block";
+				if (!d) return;
+				document.getElementById("sub").textContent =
+					d.phase === "ended" ? "Final standings" : d.q ? `Standings after question ${d.q} of ${d.total}` : "Standings";
+				for (const p of d.standings) {
+					const tr = document.createElement("tr");
+					tr.innerHTML =
+						`<td class="rank">${fmtRank(p.rank)}</td><td>${p.displayName.replace(/[&<>]/g, "")}</td>` +
+						(d.showScores ? `<td class="score">${p.score}</td>` : "");
+					tb.appendChild(tr);
+				}
+			}
+			window.addEventListener("storage", (e) => {
+				if (e.key === "mockStandings") render();
+			});
+			render();
+		</script>
+	</body>
+</html>

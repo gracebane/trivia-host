@@ -1,0 +1,604 @@
+<!doctype html>
+<html lang="en">
+	<head>
+		<meta charset="utf-8" />
+		<meta name="viewport" content="width=device-width, initial-scale=1" />
+		<title>EGA converter</title>
+		<style>
+			/* Same plain aesthetic as the mockups: white, Arial, no shadows. */
+			* {
+				box-sizing: border-box;
+			}
+			body {
+				margin: 0;
+				padding: 18px 24px;
+				background: #fff;
+				color: #000;
+				font: 13px/1.4 Arial, sans-serif;
+			}
+			h1 {
+				font-weight: normal;
+				font-size: 22px;
+				margin: 0 0 2px;
+			}
+			.sub {
+				color: #767676;
+				margin: 0 0 14px;
+			}
+			.wrap {
+				display: flex;
+				gap: 20px;
+				align-items: flex-start;
+			}
+			.panel {
+				width: 300px;
+				flex: none;
+			}
+			.stage {
+				flex: 1;
+				min-width: 0;
+			}
+			fieldset {
+				border: 1px solid #e5e5e5;
+				margin: 0 0 12px;
+				padding: 8px 10px 10px;
+			}
+			legend {
+				color: #767676;
+				font-size: 12px;
+				padding: 0 4px;
+			}
+			label.row {
+				display: block;
+				margin: 7px 0;
+			}
+			label.row > span {
+				display: flex;
+				justify-content: space-between;
+				font-size: 12px;
+			}
+			label.row b {
+				font-weight: normal;
+				color: #767676;
+			}
+			input[type="range"] {
+				width: 100%;
+				margin: 2px 0 0;
+			}
+			button,
+			.btn {
+				font: 13px Arial, sans-serif;
+				padding: 5px 12px;
+				color: #000;
+				background: #f5f5f5;
+				border: 1px solid #ccc;
+				border-radius: 2px;
+				cursor: pointer;
+				display: inline-block;
+				text-decoration: none;
+			}
+			button:hover,
+			.btn:hover {
+				border-color: #999;
+			}
+			button.mini {
+				font-size: 11px;
+				padding: 2px 7px;
+			}
+			button:disabled {
+				color: #999;
+				cursor: default;
+				border-color: #eee;
+			}
+			.drop {
+				border: 1px dashed #bbb;
+				background: #fafafa;
+				padding: 22px 14px;
+				text-align: center;
+				color: #555;
+				margin-bottom: 12px;
+			}
+			.drop.over {
+				border-color: #137333;
+				background: #eaf5ec;
+			}
+			canvas {
+				image-rendering: pixelated;
+				border: 1px solid #ddd;
+				background: #f5f5f5;
+				max-width: 100%;
+				height: auto;
+			}
+			.meta {
+				color: #767676;
+				font-size: 12px;
+				margin: 6px 0 10px;
+			}
+			code {
+				font: 12px Menlo, monospace;
+				background: #f5f5f5;
+				padding: 6px 8px;
+				display: block;
+				overflow-x: auto;
+				white-space: pre;
+				border: 1px solid #eee;
+			}
+			.swatches {
+				display: flex;
+				flex-wrap: wrap;
+				gap: 2px;
+				margin-top: 4px;
+			}
+			.sw {
+				width: 16px;
+				height: 16px;
+				border: 1px solid #ddd;
+			}
+			.sw.off {
+				opacity: 0.15;
+			}
+			.side {
+				display: flex;
+				gap: 14px;
+				align-items: flex-start;
+				flex-wrap: wrap;
+			}
+			.side figure {
+				margin: 0;
+			}
+			.side figcaption {
+				font-size: 11px;
+				color: #767676;
+				margin-top: 3px;
+			}
+			.side img {
+				max-width: 320px;
+				border: 1px solid #ddd;
+				display: block;
+			}
+			.toolbar {
+				display: flex;
+				gap: 6px;
+				align-items: center;
+				flex-wrap: wrap;
+				margin-bottom: 8px;
+			}
+		</style>
+	</head>
+	<body>
+		<h1>EGA converter</h1>
+		<p class="sub">
+			16-colour EGA pixel art, the 1990 Monkey Island look. Same pipeline as <code style="display: inline; border: 0; padding: 1px 4px">assets/ega.py</code> — tune it here, then
+			copy the command to batch it.
+		</p>
+
+		<div class="wrap">
+			<div class="panel">
+				<div class="drop" id="drop">
+					<b>Drop an image here</b><br />
+					<label class="btn" style="margin-top: 8px">Choose file<input type="file" id="file" accept="image/*" hidden /></label>
+				</div>
+
+				<fieldset>
+					<legend>Presets</legend>
+					<button class="mini" data-preset="default">Default</button>
+					<button class="mini" data-preset="warm">Warm bar photo</button>
+					<button class="mini" data-preset="crt">4:3 CRT</button>
+					<button class="mini" data-preset="flat">Flat / no dither</button>
+				</fieldset>
+
+				<fieldset>
+					<legend>Resolution</legend>
+					<label class="row"><span>Pixel width <b id="v-width"></b></span><input type="range" id="width" min="48" max="640" step="8" /></label>
+					<label class="row"><span>Upscale <b id="v-scale"></b></span><input type="range" id="scale" min="1" max="8" step="1" /></label>
+					<label class="row" style="margin-top: 10px"><input type="checkbox" id="aspect" /> Tall 4:3 pixels (<code style="display: inline; border: 0; padding: 0">--aspect</code>)</label>
+				</fieldset>
+
+				<fieldset>
+					<legend>Dither</legend>
+					<label class="row"><input type="radio" name="dither" value="ordered" /> Ordered (Bayer) — the EGA checkerboard</label>
+					<label class="row"><input type="radio" name="dither" value="fs" /> Floyd–Steinberg — smoother, noisier</label>
+					<label class="row"><input type="radio" name="dither" value="none" /> None — flat posterise</label>
+					<label class="row"><span>Spread <b id="v-spread"></b></span><input type="range" id="spread" min="0" max="1" step="0.01" /></label>
+					<label class="row"><span>Matrix <b id="v-matrix"></b></span><input type="range" id="matrix" min="0" max="2" step="1" /></label>
+				</fieldset>
+
+				<fieldset>
+					<legend>Colour</legend>
+					<label class="row"><span>Brightness <b id="v-bright"></b></span><input type="range" id="bright" min="0.2" max="2.5" step="0.05" /></label>
+					<label class="row"><span>Contrast <b id="v-contrast"></b></span><input type="range" id="contrast" min="0.2" max="2.5" step="0.05" /></label>
+					<label class="row"><span>Saturation <b id="v-sat"></b></span><input type="range" id="sat" min="0" max="3" step="0.05" /></label>
+				</fieldset>
+
+				<div class="toolbar">
+					<button id="save" disabled>Download PNG</button>
+					<button id="reset" class="mini">Reset</button>
+				</div>
+			</div>
+
+			<div class="stage">
+				<div class="toolbar">
+					<label><input type="checkbox" id="showOrig" /> Show original beside it</label>
+					<span class="meta" id="status">No image loaded.</span>
+				</div>
+				<div class="side">
+					<figure>
+						<canvas id="out" width="320" height="200"></canvas>
+						<figcaption id="outCap">EGA output</figcaption>
+					</figure>
+					<figure id="origFig" hidden>
+						<img id="orig" alt="original" />
+						<figcaption>original</figcaption>
+					</figure>
+				</div>
+
+				<p class="meta" style="margin-top: 14px">Palette use — greyed swatches are colours this image never lands on:</p>
+				<div class="swatches" id="swatches"></div>
+
+				<p class="meta" style="margin-top: 14px">Same settings from the command line:</p>
+				<code id="cli">python3 assets/ega.py photo.jpg</code>
+				<p><button id="copy" class="mini">Copy command</button></p>
+			</div>
+		</div>
+
+		<script>
+			// ---------------------------------------------------------------
+			// A direct port of assets/ega.py. Keep the two in step: palette,
+			// enhancement order (bright → contrast → saturation), Bayer matrix,
+			// nearest-colour weights, and the aspect squash all match, so what
+			// you tune here is what the CLI produces.
+			// ---------------------------------------------------------------
+			const EGA = [
+				[0x00, 0x00, 0x00], [0x00, 0x00, 0xaa], [0x00, 0xaa, 0x00], [0x00, 0xaa, 0xaa],
+				[0xaa, 0x00, 0x00], [0xaa, 0x00, 0xaa], [0xaa, 0x55, 0x00], [0xaa, 0xaa, 0xaa],
+				[0x55, 0x55, 0x55], [0x55, 0x55, 0xff], [0x55, 0xff, 0x55], [0x55, 0xff, 0xff],
+				[0xff, 0x55, 0x55], [0xff, 0x55, 0xff], [0xff, 0xff, 0x55], [0xff, 0xff, 0xff],
+			];
+			const NAMES = ["black","blue","green","cyan","red","magenta","brown","light grey","dark grey","light blue","light green","light cyan","light red","light magenta","yellow","white"];
+			const WEIGHT = [0.3 * 3, 0.59 * 3, 0.11 * 3]; // green counts most, as in the script
+
+			function nearest(r, g, b) {
+				let best = 0, bd = Infinity;
+				for (let i = 0; i < 16; i++) {
+					const p = EGA[i];
+					const dr = r - p[0], dg = g - p[1], db = b - p[2];
+					const d = dr * dr * WEIGHT[0] + dg * dg * WEIGHT[1] + db * db * WEIGHT[2];
+					if (d < bd) { bd = d; best = i; }
+				}
+				return best;
+			}
+
+			// Bayer matrix, doubling from 2×2, normalised to ±0.5 like the script.
+			function bayer(n) {
+				let m = [[0, 2], [3, 1]];
+				while (m.length < n) {
+					const s = m.length, out = [];
+					for (let y = 0; y < s * 2; y++) out.push(new Array(s * 2));
+					for (let y = 0; y < s; y++)
+						for (let x = 0; x < s; x++) {
+							const v = 4 * m[y][x];
+							out[y][x] = v;
+							out[y][x + s] = v + 2;
+							out[y + s][x] = v + 3;
+							out[y + s][x + s] = v + 1;
+						}
+					m = out;
+				}
+				return m.map((row) => row.map((v) => (v + 0.5) / (n * n) - 0.5));
+			}
+
+			// Box-filter downscale, matching Pillow's Image.Resampling.BOX exactly:
+			// each output pixel averages a WHOLE number of source pixels (the range is
+			// picked by rounding, not by fractional edge coverage), and it runs as two
+			// passes with an 8-bit round in between, the way Pillow's resample does.
+			function boxCoeffs(srcLen, dstLen) {
+				const scale = srcLen / dstLen, support = 0.5 * scale, out = [];
+				for (let i = 0; i < dstLen; i++) {
+					const center = (i + 0.5) * scale;
+					const lo = Math.max(0, Math.floor(center - support + 0.5));
+					const hi = Math.min(srcLen, Math.floor(center + support + 0.5));
+					out.push([lo, Math.max(hi, lo + 1)]);
+				}
+				return out;
+			}
+			function boxResize(src, sw, sh, tw, th) {
+				// horizontal pass: sw×sh RGBA → tw×sh RGB, rounded to 8-bit
+				const hx = boxCoeffs(sw, tw);
+				const mid = new Float32Array(tw * sh * 3);
+				for (let y = 0; y < sh; y++)
+					for (let x = 0; x < tw; x++) {
+						const [lo, hi] = hx[x];
+						let r = 0, g = 0, b = 0;
+						for (let sx = lo; sx < hi; sx++) {
+							const i = (y * sw + sx) * 4;
+							r += src[i]; g += src[i + 1]; b += src[i + 2];
+						}
+						const n = hi - lo, o = (y * tw + x) * 3;
+						mid[o] = Math.round(r / n); mid[o + 1] = Math.round(g / n); mid[o + 2] = Math.round(b / n);
+					}
+				// vertical pass: tw×sh → tw×th
+				const vy = boxCoeffs(sh, th);
+				const out = new Float32Array(tw * th * 3);
+				for (let y = 0; y < th; y++) {
+					const [lo, hi] = vy[y], n = hi - lo;
+					for (let x = 0; x < tw; x++) {
+						let r = 0, g = 0, b = 0;
+						for (let sy = lo; sy < hi; sy++) {
+							const i = (sy * tw + x) * 3;
+							r += mid[i]; g += mid[i + 1]; b += mid[i + 2];
+						}
+						const o = (y * tw + x) * 3;
+						out[o] = Math.round(r / n); out[o + 1] = Math.round(g / n); out[o + 2] = Math.round(b / n);
+					}
+				}
+				return out;
+			}
+
+			// PIL ImageEnhance semantics: blend toward black (brightness), toward a
+			// flat mid-grey of the image's mean luma (contrast), toward greyscale
+			// (colour). Luma is ITU-R 601-2, the transform PIL's "L" mode uses.
+			// Pillow's RGB→L is fixed-point ITU-R 601-2, not the decimal form.
+			const luma = (r, g, b) => (r * 19595 + g * 38470 + b * 7471 + 32768) >> 16;
+			// Each ImageEnhance step in PIL yields an 8-bit image, so every stage
+			// rounds and clamps before the next one reads it. Skipping that lets a
+			// bright/contrast pair drift far from the script on extreme settings.
+			// Pillow blends in C with a cast to UINT8, which truncates rather than
+			// rounds, and clips at both ends. Rounding here drifts about 1% of pixels.
+			const snap = (px) => {
+				for (let i = 0; i < px.length; i++) px[i] = px[i] <= 0 ? 0 : px[i] >= 255 ? 255 : Math.floor(px[i]);
+			};
+			function enhance(px, bright, contrast, sat) {
+				const n = px.length / 3;
+				if (bright !== 1) {
+					for (let i = 0; i < px.length; i++) px[i] *= bright;
+					snap(px);
+				}
+				if (contrast !== 1) {
+					let sum = 0;
+					for (let i = 0; i < n; i++) sum += luma(px[i * 3], px[i * 3 + 1], px[i * 3 + 2]);
+					const mean = Math.floor(sum / n + 0.5);
+					for (let i = 0; i < px.length; i++) px[i] = mean + (px[i] - mean) * contrast;
+					snap(px);
+				}
+				if (sat !== 1) {
+					for (let i = 0; i < n; i++) {
+						const o = i * 3, l = luma(px[o], px[o + 1], px[o + 2]);
+						px[o] = l + (px[o] - l) * sat;
+						px[o + 1] = l + (px[o + 1] - l) * sat;
+						px[o + 2] = l + (px[o + 2] - l) * sat;
+					}
+					snap(px);
+				}
+				return px;
+			}
+
+			const clamp = (v) => (v < 0 ? 0 : v > 255 ? 255 : v);
+
+			function quantise(px, w, h, opts) {
+				const idx = new Uint8Array(w * h);
+				if (opts.dither === "ordered") {
+					const m = bayer(opts.matrix), n = opts.matrix, push = opts.spread * 255;
+					for (let y = 0; y < h; y++)
+						for (let x = 0; x < w; x++) {
+							const t = m[y % n][x % n] * push, o = (y * w + x) * 3;
+							idx[y * w + x] = nearest(clamp(px[o] + t), clamp(px[o + 1] + t), clamp(px[o + 2] + t));
+						}
+				} else if (opts.dither === "fs") {
+					const a = Float32Array.from(px);
+					for (let y = 0; y < h; y++)
+						for (let x = 0; x < w; x++) {
+							const o = (y * w + x) * 3;
+							const i = nearest(clamp(a[o]), clamp(a[o + 1]), clamp(a[o + 2]));
+							idx[y * w + x] = i;
+							const err = [a[o] - EGA[i][0], a[o + 1] - EGA[i][1], a[o + 2] - EGA[i][2]];
+							const add = (xx, yy, f) => {
+								if (xx < 0 || xx >= w || yy >= h) return;
+								const q = (yy * w + xx) * 3;
+								a[q] += err[0] * f; a[q + 1] += err[1] * f; a[q + 2] += err[2] * f;
+							};
+							add(x + 1, y, 7 / 16); add(x - 1, y + 1, 3 / 16); add(x, y + 1, 5 / 16); add(x + 1, y + 1, 1 / 16);
+						}
+				} else {
+					for (let i = 0; i < w * h; i++) idx[i] = nearest(clamp(px[i * 3]), clamp(px[i * 3 + 1]), clamp(px[i * 3 + 2]));
+				}
+				return idx;
+			}
+
+			// ---------------------------------------------------------------
+			// Wiring
+			// ---------------------------------------------------------------
+			const $ = (s) => document.querySelector(s);
+			const MATRICES = [2, 4, 8];
+			const DEFAULTS = { width: 320, scale: 3, aspect: false, dither: "ordered", spread: 0.35, matrix: 8, bright: 1, contrast: 1, sat: 1 };
+			const PRESETS = {
+				default: DEFAULTS,
+				warm: { ...DEFAULTS, sat: 1.6, contrast: 1.15, spread: 0.22, matrix: 4 },
+				crt: { ...DEFAULTS, aspect: true, matrix: 4, sat: 1.2 },
+				flat: { ...DEFAULTS, dither: "none", sat: 1.3, contrast: 1.1 },
+			};
+			let opts = { ...DEFAULTS };
+			let source = null; // { name, w, h, data }  full-size pixels
+			let base = null; // downscaled Float32 RGB, cached until width/aspect changes
+			let baseKey = "";
+
+			function readControls() {
+				opts = {
+					width: +$("#width").value,
+					scale: +$("#scale").value,
+					aspect: $("#aspect").checked,
+					dither: document.querySelector("input[name=dither]:checked").value,
+					spread: +$("#spread").value,
+					matrix: MATRICES[+$("#matrix").value],
+					bright: +$("#bright").value,
+					contrast: +$("#contrast").value,
+					sat: +$("#sat").value,
+				};
+			}
+			function writeControls() {
+				$("#width").value = opts.width;
+				$("#scale").value = opts.scale;
+				$("#aspect").checked = opts.aspect;
+				document.querySelector(`input[name=dither][value="${opts.dither}"]`).checked = true;
+				$("#spread").value = opts.spread;
+				$("#matrix").value = MATRICES.indexOf(opts.matrix);
+				$("#bright").value = opts.bright;
+				$("#contrast").value = opts.contrast;
+				$("#sat").value = opts.sat;
+			}
+			function labels() {
+				$("#v-width").textContent = opts.width + " px";
+				$("#v-scale").textContent = "×" + opts.scale;
+				$("#v-spread").textContent = opts.spread.toFixed(2);
+				$("#v-matrix").textContent = `${opts.matrix}×${opts.matrix}`;
+				$("#v-bright").textContent = opts.bright.toFixed(2);
+				$("#v-contrast").textContent = opts.contrast.toFixed(2);
+				$("#v-sat").textContent = opts.sat.toFixed(2);
+				const ordered = opts.dither === "ordered";
+				$("#spread").disabled = !ordered;
+				$("#matrix").disabled = !ordered;
+			}
+
+			function render() {
+				labels();
+				cli();
+				if (!source) return;
+				const w = opts.width;
+				const h = Math.max(1, Math.round((source.h * w) / source.w * (opts.aspect ? 5 / 6 : 1)));
+				const key = `${w}x${h}`;
+				if (key !== baseKey) {
+					base = boxResize(source.data, source.w, source.h, w, h);
+					baseKey = key;
+				}
+				const px = enhance(Float32Array.from(base), opts.bright, opts.contrast, opts.sat);
+				const t0 = performance.now();
+				const idx = quantise(px, w, h, opts);
+				const ms = Math.round(performance.now() - t0);
+
+				// paint at native pixel size, then let CSS/canvas scale with hard edges
+				const small = document.createElement("canvas");
+				small.width = w; small.height = h;
+				const sctx = small.getContext("2d");
+				const img = sctx.createImageData(w, h);
+				const used = new Set();
+				for (let i = 0; i < w * h; i++) {
+					const c = EGA[idx[i]];
+					used.add(idx[i]);
+					img.data[i * 4] = c[0]; img.data[i * 4 + 1] = c[1]; img.data[i * 4 + 2] = c[2]; img.data[i * 4 + 3] = 255;
+				}
+				sctx.putImageData(img, 0, 0);
+
+				const outW = w * opts.scale;
+				const outH = Math.round(h * opts.scale * (opts.aspect ? 6 / 5 : 1));
+				const out = $("#out");
+				out.width = outW; out.height = outH;
+				const octx = out.getContext("2d");
+				octx.imageSmoothingEnabled = false;
+				octx.drawImage(small, 0, 0, outW, outH);
+				// fit the preview to the window so the controls and the command stay visible
+				const maxW = Math.max(240, Math.min(760, window.innerWidth - 400));
+				const maxH = Math.max(240, window.innerHeight - 150);
+				const k = Math.min(1, maxW / outW, maxH / outH);
+				out.style.width = Math.round(outW * k) + "px";
+
+				$("#outCap").textContent = `EGA output — ${outW}×${outH} (${w}×${h} native)`;
+				$("#status").textContent = `${source.name} · ${source.w}×${source.h} → ${w}×${h} · ${used.size} of 16 colours · ${ms} ms`;
+				$("#save").disabled = false;
+				document.querySelectorAll(".sw").forEach((el, i) => el.classList.toggle("off", !used.has(i)));
+			}
+
+			function cli() {
+				const d = DEFAULTS, f = [];
+				if (opts.width !== d.width) f.push(`--width ${opts.width}`);
+				if (opts.scale !== d.scale) f.push(`--scale ${opts.scale}`);
+				if (opts.aspect) f.push("--aspect");
+				if (opts.dither !== d.dither) f.push(`--dither ${opts.dither}`);
+				if (opts.dither === "ordered") {
+					if (opts.spread !== d.spread) f.push(`--spread ${opts.spread}`);
+					if (opts.matrix !== d.matrix) f.push(`--matrix ${opts.matrix}`);
+				}
+				if (opts.bright !== d.bright) f.push(`--bright ${opts.bright}`);
+				if (opts.contrast !== d.contrast) f.push(`--contrast ${opts.contrast}`);
+				if (opts.sat !== d.sat) f.push(`--sat ${opts.sat}`);
+				const name = source ? source.name : "photo.jpg";
+				$("#cli").textContent = `python3 assets/ega.py assets/originals/${name}${f.length ? " " + f.join(" ") : ""}`;
+			}
+
+			// Load via data: URL — a blob: URL from a file:// page taints the canvas
+			// in some browsers, and this tool is meant to be opened by double-click.
+			function load(file) {
+				const fr = new FileReader();
+				fr.onload = () => {
+					const im = new Image();
+					im.onload = () => {
+						const c = document.createElement("canvas");
+						c.width = im.naturalWidth; c.height = im.naturalHeight;
+						const ctx = c.getContext("2d", { willReadFrequently: true });
+						ctx.drawImage(im, 0, 0);
+						source = { name: file.name, w: c.width, h: c.height, data: ctx.getImageData(0, 0, c.width, c.height).data };
+						baseKey = "";
+						$("#orig").src = fr.result;
+						render();
+					};
+					im.onerror = () => ($("#status").textContent = "Couldn't decode that image.");
+					im.src = fr.result;
+				};
+				fr.readAsDataURL(file);
+			}
+
+			// palette swatches
+			$("#swatches").innerHTML = EGA.map((c, i) => `<div class="sw off" style="background: rgb(${c.join(",")})" title="${i} ${NAMES[i]}"></div>`).join("");
+
+			for (const el of document.querySelectorAll("input")) {
+				if (el.type === "file") continue;
+				el.addEventListener("input", () => { readControls(); save(); render(); });
+			}
+			$("#file").addEventListener("change", (e) => e.target.files[0] && load(e.target.files[0]));
+			const drop = $("#drop");
+			drop.addEventListener("dragover", (e) => { e.preventDefault(); drop.classList.add("over"); });
+			drop.addEventListener("dragleave", () => drop.classList.remove("over"));
+			drop.addEventListener("drop", (e) => {
+				e.preventDefault();
+				drop.classList.remove("over");
+				const f = [...e.dataTransfer.files].find((x) => x.type.startsWith("image/"));
+				if (f) load(f);
+			});
+			document.querySelectorAll("[data-preset]").forEach((b) =>
+				b.addEventListener("click", () => { opts = { ...PRESETS[b.dataset.preset] }; writeControls(); save(); render(); }),
+			);
+			$("#reset").onclick = () => { opts = { ...DEFAULTS }; writeControls(); save(); render(); };
+			$("#showOrig").onchange = (e) => ($("#origFig").hidden = !e.target.checked);
+			addEventListener("resize", () => source && render());
+			$("#save").onclick = () => {
+				const stem = (source?.name || "image").replace(/\.[^.]+$/, "");
+				$("#out").toBlob((b) => {
+					const a = Object.assign(document.createElement("a"), { href: URL.createObjectURL(b), download: `${stem}.ega.png` });
+					a.click();
+					URL.revokeObjectURL(a.href);
+				});
+			};
+			$("#copy").onclick = async () => {
+				try {
+					await navigator.clipboard.writeText($("#cli").textContent);
+					$("#copy").textContent = "Copied";
+					setTimeout(() => ($("#copy").textContent = "Copy command"), 1200);
+				} catch {
+					const r = document.createRange();
+					r.selectNode($("#cli"));
+					getSelection().removeAllRanges();
+					getSelection().addRange(r);
+				}
+			};
+
+			// remember settings between visits (per-browser convenience only)
+			function save() {
+				try { localStorage.setItem("egaOpts", JSON.stringify(opts)); } catch {}
+			}
+			try {
+				const saved = JSON.parse(localStorage.getItem("egaOpts") || "null");
+				if (saved) opts = { ...DEFAULTS, ...saved };
+			} catch {}
+			writeControls();
+			render();
+		</script>
+	</body>
+</html>

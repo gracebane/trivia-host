@@ -1,0 +1,67 @@
+<!doctype html>
+<html lang="en">
+	<head>
+		<meta charset="utf-8" />
+		<meta name="viewport" content="width=device-width, initial-scale=1" />
+		<title>Trivia — Join</title>
+		<link rel="stylesheet" href="styles.css" />
+	</head>
+	<body>
+		<div class="card">
+			<p class="brand">Trivia</p>
+			<p class="sub">Enter the code to join</p>
+
+			<!-- One field. Per spec v4 the 4-letter room code is cut: the lobby
+			     password IS the room identifier, so code and password are the same.
+			     Placeholders (hardcoded for now): imstupid → player, imwithstupid → host. -->
+			<form id="joinForm">
+				<div>
+					<input id="code" type="text" placeholder="Code" autocomplete="off" autofocus />
+				</div>
+				<div class="row">
+					<button type="submit">Enter</button>
+				</div>
+				<p class="note" id="err" style="color: #c00; display: none">Unrecognized code</p>
+			</form>
+
+			<!-- QR encodes the player path with the code embedded (scan bypasses the
+			     form). Placeholder — needs a server to actually deliver the page. -->
+			<div class="qr">
+				<img id="qr" alt="QR to join" />
+			</div>
+			<p class="note">Scan to join on a phone (placeholder)</p>
+		</div>
+
+		<script>
+			const codeEl = document.getElementById("code");
+
+			// Placeholder credentials. The value decides where you land.
+			const ROUTES = { imstupid: "player.html", imwithstupid: "host.html" };
+
+			document.getElementById("joinForm").addEventListener("submit", (e) => {
+				e.preventDefault();
+				const code = codeEl.value.trim().toLowerCase();
+				const dest = ROUTES[code];
+				if (!dest) {
+					document.getElementById("err").style.display = "block";
+					return;
+				}
+				location.href = dest + "?code=" + encodeURIComponent(code);
+			});
+
+			const target = new URL("player.html?code=imstupid", location.href).href;
+			const qr = document.getElementById("qr");
+			qr.src =
+				"https://api.qrserver.com/v1/create-qr-code/?size=150x150&data=" +
+				encodeURIComponent(target);
+			qr.onerror = () => {
+				qr.replaceWith(
+					Object.assign(document.createElement("div"), {
+						textContent: "QR offline",
+						style: "color:#767676;font-size:12px",
+					}),
+				);
+			};
+		</script>
+	</body>
+</html>

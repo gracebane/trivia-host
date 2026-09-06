@@ -1,0 +1,237 @@
+<!doctype html>
+<html lang="en">
+	<head>
+		<meta charset="utf-8" />
+		<meta name="viewport" content="width=device-width, initial-scale=1" />
+		<title>Trivia — Player</title>
+		<link rel="stylesheet" href="styles.css" />
+	</head>
+	<body class="player">
+		<!-- Player client in an iPhone frame. States follow spec v4:
+		     join (roster picker) → lobby → collecting (answer box) →
+		     submitted/waiting → reveal (verdict). No timers; verdicts hidden
+		     until reveal (showVerdictsLive off); host can "send back" an answer
+		     while the question is open (resubmission grant). -->
+		<div class="phone">
+			<div class="screen">
+				<div class="topbar">
+					<span class="brand-sm">Trivia</span>
+					<span id="code" class="muted"></span>
+					<span id="whoTop" class="muted"></span>
+				</div>
+
+				<!-- JOIN: roster picker as a dropdown -->
+				<div class="state" id="s-join">
+					<h1>Who are you?</h1>
+					<select id="nameSelect" class="wfull"></select>
+					<div class="newname" id="newnameWrap" style="display: none">
+						<input id="newname" type="text" placeholder="Your name" autocomplete="off" />
+						<button id="newnameOk" type="button">OK</button>
+					</div>
+					<button id="joinBtn" class="wfull">Join</button>
+					<p class="muted">Live players are marked (live).</p>
+				</div>
+
+				<!-- LOBBY: joined, game not on your screen yet -->
+				<div class="state" id="s-lobby" style="display: none">
+					<h1>Welcome, <span class="who"></span></h1>
+					<p class="muted">You're in. Waiting for the next question…</p>
+					<a class="plain" href="#" data-switch>Not you? Switch player</a>
+				</div>
+
+				<!-- COLLECTING: answer the question shown on the TV -->
+				<div class="state" id="s-collecting" style="display: none">
+					<p class="qnum">Question <span class="qn"></span></p>
+					<p class="muted">Type your answer to the question on screen.</p>
+					<input id="answer" class="answer" type="text" placeholder="Your answer" autocomplete="off" />
+					<button id="submitBtn" class="wfull">Submit</button>
+				</div>
+
+				<!-- SUBMITTED: waiting; can't see verdict (showVerdictsLive off) -->
+				<div class="state" id="s-submitted" style="display: none">
+					<p class="qnum">Question <span class="qn"></span></p>
+					<p class="muted">Answer submitted</p>
+					<span class="pill" id="submittedAnswer"></span>
+					<p class="muted">Waiting for the host to reveal…</p>
+				</div>
+
+				<!-- SEND-BACK: host granted a resubmission while question still open -->
+				<div class="state" id="s-sendback" style="display: none">
+					<p class="qnum">Question <span class="qn"></span></p>
+					<div class="sendback">The host asked you to revise your answer.</div>
+					<input id="answer2" class="answer" type="text" placeholder="Your answer" autocomplete="off" />
+					<button id="resubmitBtn" class="wfull">Resubmit</button>
+				</div>
+
+				<!-- REVEAL: verdict for this question + running score -->
+				<div class="state" id="s-reveal" style="display: none">
+					<p class="qnum">Question <span class="qn"></span> — result</p>
+					<div id="verdict"></div>
+					<span class="pill" id="revealAnswer"></span>
+					<p class="muted">Score: <b><span id="score">0</span></b></p>
+					<p class="muted">Next question coming up…</p>
+				</div>
+			</div>
+		</div>
+
+		<!-- Mock host controls — NOT part of the phone UI. Lets you feel the flow. -->
+		<div class="simbar">
+			<b>Simulate host</b> (mock only)<br />
+			<button class="btn" data-sim="open">▶ Open question</button>
+			<button class="btn" data-sim="sendback">↩ Send back</button>
+			<button class="btn" data-sim="reveal-ok">✓ Reveal correct</button>
+			<button class="btn" data-sim="reveal-no">✗ Reveal wrong</button>
+			<button class="btn" data-sim="next">» Next</button>
+		</div>
+
+		<script>
+			// ---- Placeholder roster (stands in for the server / D1) ----
+			const roster = [
+				{ name: "Alice" },
+				{ name: "Bob", live: true },
+				{ name: "Carol" },
+				{ name: "Dave" },
+				{ name: "Eve", live: true },
+				{ name: "Frank" },
+				{ name: "Grace" },
+			];
+
+			const params = new URLSearchParams(location.search);
+			const code = params.get("code");
+			if (code) document.getElementById("code").textContent = code;
+
+			// device→person hint (a hint, not a binding), remembered locally
+			const hint = localStorage.getItem("mockPerson");
+
+			// ---- faux game state ----
+			const game = { name: null, qn: 1, score: 0, lastAnswer: "" };
+
+			// ---- state machine ----
+			const states = ["join", "lobby", "collecting", "submitted", "sendback", "reveal"];
+			function show(state) {
+				for (const s of states) {
+					document.getElementById("s-" + s).style.display = s === state ? "flex" : "none";
+				}
+				document.querySelectorAll(".qn").forEach((el) => (el.textContent = game.qn));
+			}
+
+			// ---- JOIN view ----
+			const NEW = "__new__";
+			const sel = document.getElementById("nameSelect");
+			const newWrap = document.getElementById("newnameWrap");
+			const newInput = document.getElementById("newname");
+
+			function renderRoster() {
+				sel.innerHTML = "";
+				const ordered = [...roster.filter((p) => !p.live), ...roster.filter((p) => p.live)];
+				for (const p of ordered) {
+					const o = document.createElement("option");
+					o.value = p.name;
+					o.textContent = p.live ? p.name + " (live)" : p.name;
+					if (p.name === hint) o.selected = true;
+					sel.appendChild(o);
+				}
+				const o = document.createElement("option");
+				o.value = NEW;
+				o.textContent = "+ New player…";
+				sel.appendChild(o);
+			}
+
+			// Inline new-player entry (no popup): reveal a textbox instead.
+			sel.addEventListener("change", () => {
+				if (sel.value === NEW) {
+					newWrap.style.display = "flex";
+					newInput.focus();
+				} else {
+					newWrap.style.display = "none";
+				}
+			});
+			function confirmNewName() {
+				const name = newInput.value.trim();
+				if (!name) return;
+				roster.push({ name });
+				renderRoster();
+				sel.value = name;
+				newWrap.style.display = "none";
+			}
+			document.getElementById("newnameOk").onclick = confirmNewName;
+			newInput.addEventListener("keydown", (e) => {
+				if (e.key === "Enter") confirmNewName();
+			});
+
+			document.getElementById("joinBtn").onclick = () => {
+				if (sel.value === NEW) {
+					confirmNewName();
+					if (sel.value === NEW) return; // still no name
+				}
+				join(sel.value);
+			};
+
+			function join(name) {
+				game.name = name;
+				localStorage.setItem("mockPerson", name);
+				document.querySelectorAll(".who").forEach((el) => (el.textContent = name));
+				document.getElementById("whoTop").textContent = name;
+				// Drop straight into a live question so you can type an answer.
+				show("collecting");
+			}
+
+			document.querySelectorAll("[data-switch]").forEach((el) =>
+				el.addEventListener("click", (e) => {
+					e.preventDefault();
+					show("join");
+				}),
+			);
+
+			// ---- answering ----
+			function submitAnswer(value) {
+				game.lastAnswer = value.trim();
+				document.getElementById("submittedAnswer").textContent = game.lastAnswer || "(blank)";
+				show("submitted");
+			}
+			document.getElementById("submitBtn").onclick = () =>
+				submitAnswer(document.getElementById("answer").value);
+			document.getElementById("resubmitBtn").onclick = () =>
+				submitAnswer(document.getElementById("answer2").value);
+
+			// ---- mock host controls ----
+			document.querySelectorAll("[data-sim]").forEach((b) =>
+				b.addEventListener("click", () => {
+					if (!game.name) return; // must join first
+					const act = b.dataset.sim;
+					if (act === "open") show("collecting");
+					else if (act === "sendback") {
+						document.getElementById("answer2").value = game.lastAnswer;
+						show("sendback");
+					} else if (act === "reveal-ok") reveal(true);
+					else if (act === "reveal-no") reveal(false);
+					else if (act === "next") {
+						game.qn++;
+						game.lastAnswer = "";
+						document.getElementById("answer").value = "";
+						show("collecting");
+					}
+				}),
+			);
+
+			function reveal(correct) {
+				const v = document.getElementById("verdict");
+				if (correct) {
+					v.className = "verdict-ok";
+					v.textContent = "Correct!";
+					game.score += 10;
+				} else {
+					v.className = "verdict-no";
+					v.textContent = "Not this time.";
+				}
+				document.getElementById("revealAnswer").textContent =
+					"You said: " + (game.lastAnswer || "(blank)");
+				document.getElementById("score").textContent = game.score;
+				show("reveal");
+			}
+
+			renderRoster();
+			show("join");
+		</script>
+	</body>
+</html>

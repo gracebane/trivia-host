@@ -1,0 +1,1175 @@
+<!doctype html>
+<html lang="en">
+	<head>
+		<meta charset="utf-8" />
+		<meta name="viewport" content="width=device-width, initial-scale=1" />
+		<title>Trivia — Host</title>
+		<link rel="stylesheet" href="styles.css" />
+	</head>
+	<body class="host">
+		<!-- Host controller mockup, laptop-primary. Spec v4 "Host client structure":
+		     four tabs — slide tracker · guess evaluator · player management ·
+		     session settings. No timers: the submission tracker is the only
+		     move-on signal. Answers are graded as they arrive while collection is
+		     still open; verdicts stay editable forever. The app never renders
+		     slides — the host advances PowerPoint on the TV by hand, so the
+		     control strip is deliberately three verbs: Next · Close · End. -->
+
+		<div class="hostwrap">
+			<div class="hostbar">
+				<div>
+					<span class="brand-sm">Trivia</span> <span class="muted">host · <span id="code"></span></span>
+				</div>
+				<div class="hostbar-mid" id="status"></div>
+				<div>
+					<button id="nextBtn">Next question ›</button>
+					<button id="closeBtn">Close question</button>
+					<button id="endBtn" class="danger">End game</button>
+				</div>
+			</div>
+
+			<div class="tabs">
+				<a href="#" data-tab="tracker">Slide tracker</a>
+				<a href="#" data-tab="evaluator">Guess evaluator <span class="badge" id="reviewBadge"></span></a>
+				<a href="#" data-tab="players">Player management</a>
+				<a href="#" data-tab="settings">Session settings</a>
+			</div>
+
+			<!-- ================= SLIDE TRACKER ================= -->
+			<section class="tab" id="tab-tracker">
+				<div class="toolbar">
+					<label class="btn">Load deck (.pptx)<input type="file" id="deckFile" accept=".pptx" hidden /></label>
+					<label class="btn">Load thumbnails<input type="file" id="thumbFiles" accept="image/*" multiple hidden /></label>
+					<button id="mapBtn" disabled title="load a deck first">Map slides</button>
+					<label class="btn">Load pack (JSON)<input type="file" id="packFile" accept=".json,application/json" hidden /></label>
+					<button id="exportPack">Export pack</button>
+					<button id="addQ">+ Question</button>
+					<span class="muted" id="deckNote">No deck loaded. A deck fills the list from its slides; thumbnails come from <code>scripts/deck2pack.py</code> or PowerPoint's export-as-images.</span>
+				</div>
+				<!-- Slide mapper: the host assigns roles by hand. Auto-detection only
+				     pre-fills it — not every deck follows the pair-of-slides convention. -->
+				<section id="mapper" style="display: none">
+					<div class="toolbar">
+						<b>Map slides to questions</b>
+						<span class="muted" id="mapNote"></span>
+						<button id="mapApply">Apply mapping</button>
+						<button id="mapCancel">Cancel</button>
+					</div>
+					<table class="grid">
+						<thead>
+							<tr>
+								<th>Slide</th>
+								<th>Text on slide</th>
+								<th>Role</th>
+								<th>Question text</th>
+								<th>Answer</th>
+							</tr>
+						</thead>
+						<tbody id="mapBody"></tbody>
+					</table>
+					<p class="note">
+						Question numbers follow slide order. An answer slide belongs to any question, not just the one above it, so a
+						block of answer slides at the end works. If the answer is on the question slide itself (animated reveal) or in
+						no text box at all (picture round), set it on the question row or type it.
+					</p>
+				</section>
+				<table class="grid" id="trackerTable">
+					<thead>
+						<tr>
+							<th>#</th>
+							<th>Deck slide</th>
+							<th>Question</th>
+							<th>Accepted answers</th>
+							<th>Pts</th>
+							<th>Status</th>
+							<th></th>
+						</tr>
+					</thead>
+					<tbody id="trackerBody"></tbody>
+				</table>
+				<p class="note" id="deckHint"></p>
+				<p class="note">
+					Deck drift is an accepted cost of this design: the app's idea of the current question can diverge from the TV.
+					The <i>Deck slide</i> column and the thumbnails are the sync aid — reference only, never a display source.
+					⚠ marks a question the extractor wasn't sure about (list answers, no "Answer:" box, picture rounds); fix it in
+					<i>settings</i> or remove it.
+				</p>
+			</section>
+
+			<!-- ================= GUESS EVALUATOR ================= -->
+			<section class="tab" id="tab-evaluator">
+				<div class="toolbar">
+					<label>Question <select id="evalQ" class="short"></select></label>
+					<span class="muted" id="evalMeta"></span>
+				</div>
+				<p class="eval-prompt" id="evalPrompt"></p>
+				<div class="thumbs" id="evalThumbs"></div>
+				<div id="evalEmpty" class="muted">No question open yet — start the game from the strip above.</div>
+				<div id="evalBody" style="display: none">
+					<div class="stats" id="evalStats"></div>
+					<h2>Review queue <span class="muted">— everything not yet confirmed, closest first; the grader's call is pre-highlighted, one click confirms it</span></h2>
+					<div id="queue"></div>
+
+					<h2>Submission tracker <span class="muted">— who's in, who isn't; the only signal for when to close</span></h2>
+					<table class="grid">
+						<thead>
+							<tr>
+								<th>Player</th>
+								<th>Answer</th>
+								<th>Actions</th>
+								<th>Verdict</th>
+								<th>Confirmed</th>
+							</tr>
+						</thead>
+						<tbody id="subBody"></tbody>
+					</table>
+					<p class="note">
+						<span class="dot ok"></span>correct, confirmed &nbsp; <span class="dot ok outline"></span>correct, pending &nbsp; <span class="dot no"></span>incorrect, confirmed &nbsp;
+						<span class="dot no outline"></span>incorrect, pending &nbsp; <span class="dot back"></span>sent back &nbsp; <span class="dot"></span>no answer.
+						Outline = pending your confirmation; filled = confirmed. Only confirmed-correct scores.
+						Exact matches (and fuzzy matches when <code>autoPassFuzzy</code> is on) arrive confirmed; everything else arrives pending.
+						✓ ✗ confirm or flip the judgment (any question, any time); ↩ <b>Send back</b> reopens it for review and, while the question is open, hands the player their textbox back.
+						Greyed rows are disconnected — cosmetic only.
+					</p>
+				</div>
+			</section>
+
+			<!-- ================= PLAYER MANAGEMENT ================= -->
+			<section class="tab" id="tab-players">
+				<h2>In this game</h2>
+				<table class="grid">
+					<thead>
+						<tr>
+							<th>Rank</th>
+							<th>Player</th>
+							<th class="scorecol">Score</th>
+							<th>Joined</th>
+							<th>Connection</th>
+							<th>Identity</th>
+						</tr>
+					</thead>
+					<tbody id="roomBody"></tbody>
+				</table>
+				<p class="note">Ties take the average of the tied ranks. Rename / merge / delete / kick are the host identity panel — post-MVP, shown disabled.</p>
+
+				<h2>All known players <span class="muted">— D1 total player list, independent of any room</span></h2>
+				<div class="toolbar">
+					<label>Tag <select id="tagFilter"></select></label>
+					<button id="seedBtn">Add everyone shown to the lobby</button>
+					<span class="muted">Tags are free text, comma-separated; edit and tab out to save.</span>
+				</div>
+				<table class="grid">
+					<thead>
+						<tr>
+							<th>Name</th>
+							<th>Tags</th>
+							<th>Games</th>
+							<th>Lobby</th>
+						</tr>
+					</thead>
+					<tbody id="peopleBody"></tbody>
+				</table>
+			</section>
+
+			<!-- ================= SESSION SETTINGS ================= -->
+			<section class="tab" id="tab-settings">
+				<h2>Grading</h2>
+				<div class="settingrow"><label><input type="checkbox" id="autoPassFuzzy" /> <code>autoPassFuzzy</code> — auto-resolve fuzzy matches to correct instead of queueing them</label></div>
+				<div class="settingrow"><label><input type="checkbox" id="showVerdictsLive" /> <code>showVerdictsLive</code> — players see verdicts as they're graded, not just at reveal</label></div>
+				<p class="note">Settings are read at point of use: a mid-game change applies going forward only. Nothing is baked in at game start.</p>
+
+				<h2>Leaderboard</h2>
+				<div class="settingrow"><label><input type="checkbox" id="showScores" /> Show scores alongside ranks</label></div>
+				<div class="settingrow">
+					<a class="btn" id="openBoard" href="leaderboard.html" target="_blank">Open leaderboard tab</a>
+					<code id="boardUrl"></code>
+					<span class="muted">Tear the tab out to the TV once at setup; alt-tab to it between rounds. Or point a tablet at the URL.</span>
+				</div>
+				<p class="note">Laptop → TV must be <b>Extend</b>, never Duplicate — Duplicate leaks this screen.</p>
+
+				<h2>Access</h2>
+				<div class="settingrow">Player password <code>imstupid</code> &nbsp; Host passphrase <code>imwithstupid</code> <span class="muted">— hardcoded for now, mutable later</span></div>
+				<div class="settingrow">
+					<span class="muted">Host session: signed in via passphrase, token in localStorage. The passphrase itself works from any device (battery-death recovery).</span>
+					<a class="plain" href="index.html">Sign out</a>
+				</div>
+
+				<h2>Game</h2>
+				<div class="settingrow">
+					<button id="endBtn2" class="danger">End game</button>
+					<span class="muted">Immediate: archives the log to D1 and freezes the room. Leaderboard stays reachable; a mis-click is undoable. Idle GC after 12 h does the actual delete.</span>
+				</div>
+			</section>
+		</div>
+
+		<!-- Mock player activity — NOT part of the host UI. Lets you feel the flow. -->
+		<div class="simbar">
+			<b>Simulate players</b> (mock only) &nbsp;
+			<button class="btn" data-sim="exact">✓ Exact answer</button>
+			<button class="btn" data-sim="fuzzy">≈ Fuzzy answer</button>
+			<button class="btn" data-sim="wrong">✗ Wrong answer</button>
+			<button class="btn" data-sim="all">Everyone answers</button>
+			<button class="btn" data-sim="toggle">Toggle someone's connection</button>
+			<button class="btn" data-sim="joiner">Mid-game joiner</button>
+			<span class="muted" id="simNote"></span>
+		</div>
+		<div class="toast" id="toast"></div>
+
+		<script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+		<script>
+			// ------------------------------------------------------------------
+			// Mock data — stands in for the host-supplied pack, D1, and the room.
+			// ------------------------------------------------------------------
+			const pack = {
+				title: "Party pack",
+				questions: [
+					{ id: "q1", slide: 2, prompt: "Capital of Australia?", answers: ["Canberra"], points: 10, autograde: true, secondGuess: "grant", threshold: "auto" },
+					{ id: "q2", slide: 4, prompt: "Who painted the Sistine Chapel ceiling?", answers: ["Michelangelo"], points: 10, autograde: true, secondGuess: "grant", threshold: "auto" },
+					{ id: "q3", slide: 6, prompt: "Chemical symbol for gold?", answers: ["Au"], points: 5, autograde: true, secondGuess: "grant", threshold: "auto" },
+					{ id: "q4", slide: 8, prompt: "Year the Berlin Wall fell?", answers: ["1989"], points: 10, autograde: true, secondGuess: "none", threshold: "exact" },
+					{ id: "q5", slide: 10, prompt: "Which band released Rumours?", answers: ["Fleetwood Mac"], points: 15, autograde: true, secondGuess: "grant", threshold: "auto" },
+					{ id: "q6", slide: 12, prompt: "Largest moon of Saturn?", answers: ["Titan"], points: 10, autograde: true, secondGuess: "grant", threshold: "auto" },
+					{ id: "q7", slide: 14, prompt: "Author of Pride and Prejudice?", answers: ["Jane Austen", "Austen"], points: 10, autograde: true, secondGuess: "grant", threshold: "auto" },
+					{ id: "q8", slide: 16, prompt: "Bonus: 16th US president", answers: ["Abraham Lincoln", "Lincoln"], points: 20, autograde: false, secondGuess: "grant", threshold: "auto" },
+				],
+			};
+
+			// D1 "total player list": everyone the app has ever seen. Tags are host-edited.
+			const people = [
+				{ personId: "p-alice", displayName: "Alice", tags: ["college"], gamesPlayed: 4 },
+				{ personId: "p-bob", displayName: "Bob", tags: ["college", "neighbors"], gamesPlayed: 6 },
+				{ personId: "p-carol", displayName: "Carol", tags: ["work"], gamesPlayed: 2 },
+				{ personId: "p-dave", displayName: "Dave", tags: ["work"], gamesPlayed: 1 },
+				{ personId: "p-eve", displayName: "Eve", tags: ["neighbors"], gamesPlayed: 3 },
+				{ personId: "p-frank", displayName: "Frank", tags: ["college"], gamesPlayed: 5 },
+				{ personId: "p-grace", displayName: "Grace", tags: ["book club"], gamesPlayed: 2 },
+				{ personId: "p-heidi", displayName: "Heidi", tags: ["book club"], gamesPlayed: 0 },
+				{ personId: "p-ivan", displayName: "Ivan", tags: ["work"], gamesPlayed: 1 },
+				{ personId: "p-judy", displayName: "Judy", tags: ["neighbors", "book club"], gamesPlayed: 3 },
+				{ personId: "p-oscar", displayName: "Oscar", tags: ["college"], gamesPlayed: 2 },
+				{ personId: "p-peggy", displayName: "Peggy", tags: [], gamesPlayed: 0 },
+			];
+
+			// Room roster. Player record is an object from day one (spec).
+			const players = [
+				{ personId: "p-alice", connected: true, joinedAtQuestion: null },
+				{ personId: "p-bob", connected: true, joinedAtQuestion: null },
+				{ personId: "p-carol", connected: true, joinedAtQuestion: null },
+				{ personId: "p-dave", connected: false, joinedAtQuestion: null },
+				{ personId: "p-eve", connected: true, joinedAtQuestion: null },
+				{ personId: "p-frank", connected: true, joinedAtQuestion: null },
+				{ personId: "p-grace", connected: true, joinedAtQuestion: null },
+			];
+
+			// Append-only answer log. Scores are a fold over this, never stored.
+			// Row: { questionId, personId, deviceId, payload, submittedAt, verdict, superseded }
+			const log = [];
+			// Resubmission grants: per-player, only while the question is open.
+			const grants = new Set();
+
+			const settings = { autoPassFuzzy: false, showVerdictsLive: false, showScores: true };
+			// phase ∈ lobby | collecting | revealing | ended.  cur = index into pack.questions.
+			const game = { phase: "lobby", cur: -1, before: null, evalQ: null };
+			let openSettings = null; // which tracker row has its settings expanded
+			// Deck reference material. thumbs = real renders keyed by slide number;
+			// pics = each slide's first embedded picture, a stand-in until thumbs load.
+			const deck = { name: null, thumbs: new Map(), pics: new Map(), slides: [], map: [] };
+			const thumbFor = (n) => (deck.thumbs.has(n) ? { src: deck.thumbs.get(n), standin: false } : deck.pics.has(n) ? { src: deck.pics.get(n), standin: true } : null);
+			const answerSlide = (q) => q.answerSlide ?? q.slide + 1;
+
+			const params = new URLSearchParams(location.search);
+			document.getElementById("code").textContent = params.get("code") || "imwithstupid";
+
+			// ------------------------------------------------------------------
+			// Helpers
+			// ------------------------------------------------------------------
+			const $ = (s) => document.querySelector(s);
+			const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]);
+			const person = (pid) => people.find((p) => p.personId === pid);
+			const name = (pid) => person(pid)?.displayName ?? pid;
+			const curQ = () => (game.cur >= 0 ? pack.questions[game.cur] : null);
+			const qIndex = (qid) => pack.questions.findIndex((q) => q.id === qid);
+			const fmtRank = (r) => (Number.isInteger(r) ? String(r) : r.toFixed(1));
+
+			let toastTimer;
+			function toast(msg) {
+				const t = $("#toast");
+				t.textContent = msg;
+				t.style.display = "block";
+				clearTimeout(toastTimer);
+				toastTimer = setTimeout(() => (t.style.display = "none"), 2200);
+			}
+
+			// Latest non-superseded row per person for one question. (Fold rule.)
+			function liveRows(qid) {
+				const m = new Map();
+				for (const r of log) if (r.questionId === qid && !r.superseded) m.set(r.personId, r);
+				return m;
+			}
+			// The review queue is everything not yet confirmed, closest first.
+			function pendingItems(qid) {
+				return [...liveRows(qid).values()]
+					.filter((r) => !r.verdict.confirmed)
+					.sort((a, b) => (a.verdict.distance ?? 99) - (b.verdict.distance ?? 99));
+			}
+			function pendingTotal() {
+				return pack.questions.reduce((n, q) => n + pendingItems(q.id).length, 0);
+			}
+
+			// The leaderboard fold: confirmed-correct rows only, latest per person-question.
+			function scores() {
+				const s = new Map(players.map((p) => [p.personId, 0]));
+				for (const q of pack.questions) {
+					for (const [pid, r] of liveRows(q.id)) {
+						if (r.verdict.state === "correct" && r.verdict.confirmed && s.has(pid)) s.set(pid, s.get(pid) + q.points);
+					}
+				}
+				return s;
+			}
+			// Ties take the average of the tied ranks (two tied for 1st → both 1.5).
+			function standings() {
+				const s = scores();
+				const rows = players
+					.map((p) => ({ ...p, displayName: name(p.personId), score: s.get(p.personId) }))
+					.sort((a, b) => b.score - a.score || a.displayName.localeCompare(b.displayName));
+				let i = 0;
+				while (i < rows.length) {
+					let j = i;
+					while (j + 1 < rows.length && rows[j + 1].score === rows[i].score) j++;
+					const rank = (i + 1 + (j + 1)) / 2;
+					for (let k = i; k <= j; k++) rows[k].rank = rank;
+					i = j + 1;
+				}
+				return rows;
+			}
+
+			// ------------------------------------------------------------------
+			// Grading — MOCK ONLY. The real matcher (normalize → Damerau-Levenshtein
+			// with a length-scaled threshold) runs server-side and is being
+			// prototyped in Python. Here the simulation *tells* us what kind of
+			// answer it sent and we stamp the verdict the spec says that kind gets,
+			// so the review queue and overrides can be exercised.
+			// ------------------------------------------------------------------
+			function threshold(q) {
+				if (q.threshold === "exact") return 0;
+				if (q.threshold === "auto") return Math.floor(q.answers[0].length / 5);
+				return Number(q.threshold);
+			}
+			// Verdict has two axes: `state` is the judgment (correct | incorrect),
+			// `confirmed` is whether the host has signed off. Exact → correct+confirmed.
+			// Within fuzzy distance → correct, confirmed only if autoPassFuzzy is on.
+			// Outside it → incorrect, always pending first (a red outline until the
+			// host fills it in). Autograde off → same judgment, never auto-confirmed.
+			function grade(q, kind) {
+				const v = { state: "incorrect", confirmed: false, matched: null, distance: null, method: "none", overridden: false };
+				if (kind === "exact") Object.assign(v, { state: "correct", confirmed: true, matched: q.answers[0], distance: 0, method: "exact" });
+				else if (kind === "fuzzy") {
+					Object.assign(v, { matched: q.answers[0], distance: 1, method: "fuzzy" });
+					if (1 <= threshold(q)) Object.assign(v, { state: "correct", confirmed: settings.autoPassFuzzy }); // read at point of use
+				} else Object.assign(v, { distance: 6, method: "fuzzy" });
+				if (!q.autograde) Object.assign(v, { confirmed: false, method: "manual" });
+				return v;
+			}
+			const DECOYS = ["Sydney", "Raphael", "Ag", "1991", "The Eagles", "Europa", "Brontë", "Grant", "pass", "no idea"];
+			function fuzz(s) {
+				if (s.length < 4) return s.split("").reverse().join("");
+				// swap two adjacent middle letters that differ, so the typo is real
+				let i;
+				do i = 1 + Math.floor(Math.random() * (s.length - 3));
+				while (s[i] === s[i + 1]);
+				return s.slice(0, i) + s[i + 1] + s[i] + s.slice(i + 2);
+			}
+			function textFor(q, kind) {
+				if (kind === "exact") return q.answers[0];
+				if (kind === "fuzzy") return fuzz(q.answers[0]);
+				return DECOYS[Math.floor(Math.random() * DECOYS.length)];
+			}
+
+			// ------------------------------------------------------------------
+			// Actions (what the host / server would do)
+			// ------------------------------------------------------------------
+			function submit(pid, kind) {
+				const q = curQ();
+				if (!q) return toast("No open question");
+				// canSubmit = room.collecting || grants.has(personId)   (spec)
+				if (!(game.phase === "collecting" || grants.has(pid))) return toast("Server would reject: question closed, no grant");
+				for (const r of log) if (r.questionId === q.id && r.personId === pid && !r.superseded) r.superseded = true;
+				log.push({
+					questionId: q.id,
+					personId: pid,
+					deviceId: "dev-" + pid,
+					payload: { text: textFor(q, kind) },
+					submittedAt: Date.now(),
+					verdict: grade(q, kind),
+					superseded: false,
+				});
+				grants.delete(pid);
+				render();
+			}
+
+			// One button, two lifetimes. At any time it un-confirms the verdict (the
+			// answer returns to the review queue, judgment untouched); while the
+			// question is still open it is also the resubmission grant — the player
+			// gets their textbox back. Once closed, only the un-confirm applies.
+			function sendBack(qid, pid) {
+				const r = liveRows(qid).get(pid);
+				if (!r) return;
+				if (qid === curQ()?.id && game.phase === "collecting") grants.add(pid);
+				r.verdict.confirmed = false;
+				render();
+			}
+
+			// ✓ / ✗: confirm the held judgment, or flip it and confirm. Any question,
+			// any time. Confirming what the grader already said is not an override;
+			// changing the judgment (or the matched candidate) is.
+			function setVerdict(qid, pid, state, matched) {
+				const r = liveRows(qid).get(pid);
+				if (!r) return;
+				const v = r.verdict;
+				const changed = state !== v.state || (state === "correct" && matched !== v.matched);
+				v.state = state;
+				v.matched = state === "correct" ? matched : null;
+				v.confirmed = true;
+				if (changed) v.overridden = true;
+				render();
+			}
+
+			function next() {
+				if (game.phase === "collecting" || game.phase === "ended") return;
+				if (game.cur + 1 >= pack.questions.length) return toast("No more questions — End game when ready");
+				game.cur++;
+				game.phase = "collecting";
+				grants.clear();
+				game.evalQ = curQ().id;
+				render();
+			}
+			// Close = stop collecting. Non-submitters score 0 by absence (no row needed).
+			// Design call: v4's phase machine is collecting → revealing with no
+			// grading phase, so close and reveal are the same transition here.
+			function closeQ() {
+				if (game.phase !== "collecting") return;
+				game.phase = "revealing";
+				grants.clear();
+				render();
+			}
+			function endGame() {
+				if (game.phase === "ended") {
+					game.phase = game.before; // undo the mis-click; the room was frozen, not deleted
+				} else {
+					game.before = game.phase;
+					game.phase = "ended";
+					grants.clear();
+				}
+				render();
+			}
+
+			function addToLobby(pid) {
+				if (players.some((p) => p.personId === pid)) return;
+				players.push({ personId: pid, connected: true, joinedAtQuestion: game.cur >= 0 ? game.cur : null });
+			}
+
+			// ------------------------------------------------------------------
+			// Rendering
+			// ------------------------------------------------------------------
+			function render() {
+				renderStatus();
+				renderTracker();
+				renderEvaluator();
+				renderPlayers();
+				renderSettings();
+				$("#reviewBadge").textContent = pendingTotal() || "";
+				publishStandings();
+			}
+
+			function renderStatus() {
+				const q = curQ();
+				const n = pack.questions.length;
+				const connected = players.filter((p) => p.connected).length;
+				let s;
+				if (game.phase === "lobby") s = `Lobby · ${connected} of ${players.length} players connected · ${n} questions loaded`;
+				else if (game.phase === "ended") s = `Game over — room frozen. Leaderboard still reachable; log archived to D1.`;
+				else {
+					const live = liveRows(q.id);
+					const pend = pendingItems(q.id).length;
+					const ok = [...live.values()].filter((r) => r.verdict.state === "correct" && r.verdict.confirmed).length;
+					s =
+						game.phase === "collecting"
+							? `Q${game.cur + 1} of ${n} · <b>collecting</b> · ${live.size}/${players.length} answered${pend ? ` · ${pend} to review` : ""}`
+							: `Q${game.cur + 1} of ${n} · <b>closed</b> · ${ok} correct${pend ? ` · ${pend} still to review` : ""}`;
+				}
+				$("#status").innerHTML = s;
+
+				const nextBtn = $("#nextBtn");
+				nextBtn.textContent = game.phase === "lobby" ? "Start game ›" : "Next question ›";
+				nextBtn.disabled = game.phase === "collecting" || game.phase === "ended" || game.cur + 1 >= n;
+				const closeBtn = $("#closeBtn");
+				const missing = q ? players.filter((p) => !liveRows(q.id).has(p.personId)).length : 0;
+				closeBtn.textContent = game.phase === "collecting" && missing ? `Close question (${missing} not answered → 0)` : "Close question";
+				closeBtn.disabled = game.phase !== "collecting";
+				for (const b of [$("#endBtn"), $("#endBtn2")]) b.textContent = game.phase === "ended" ? "Undo end game" : "End game";
+			}
+
+			function renderTracker() {
+				const tb = $("#trackerBody");
+				tb.innerHTML = "";
+				pack.questions.forEach((q, i) => {
+					const tr = document.createElement("tr");
+					if (i === game.cur) tr.className = "current";
+					let status = "";
+					if (i === game.cur) status = game.phase === "collecting" ? "<b>collecting</b>" : game.phase === "revealing" ? "closed" : game.phase;
+					else if (i < game.cur) status = "done";
+					const live = liveRows(q.id);
+					const ok = [...live.values()].filter((r) => r.verdict.state === "correct" && r.verdict.confirmed).length;
+					const pend = pendingItems(q.id).length;
+					const tally = i <= game.cur ? `<span class="muted">${live.size} in · ${ok} ✓${pend ? ` · ${pend} ?` : ""}</span>` : "";
+					const th = thumbFor(q.slide);
+					const thumb = th ? `<img class="thumb${th.standin ? " standin" : ""}" src="${th.src}" title="${th.standin ? "slide picture (stand-in — load thumbnails for a render)" : "slide " + q.slide}" />` : "";
+					const flags = q.flags?.length ? `<div class="flag" title="extractor wasn't sure — check settings">⚠ ${q.flags.join(", ")}</div>` : "";
+					const cat = q.category ? `<div class="muted">${esc(q.category)}</div>` : "";
+					tr.innerHTML = `<td>${i + 1}</td><td>${thumb}${q.slide}${q.answerSlide ? `→${q.answerSlide}` : ""}</td><td>${cat}${esc(q.prompt)}${flags}</td><td>${q.answers.map(esc).join(", ")}</td><td>${q.points}</td><td>${status} ${tally}</td><td><a href="#" data-edit="${i}">${openSettings === i ? "close" : "settings"}</a></td>`;
+					tb.appendChild(tr);
+					if (openSettings === i) tb.appendChild(settingsRow(q, i));
+				});
+				tb.querySelectorAll("[data-edit]").forEach((a) =>
+					a.addEventListener("click", (e) => {
+						e.preventDefault();
+						const i = Number(a.dataset.edit);
+						openSettings = openSettings === i ? null : i;
+						renderTracker();
+					}),
+				);
+				const q = curQ();
+				$("#deckHint").textContent = q
+					? `TV should be on slide ${q.slide} (question)${game.phase === "revealing" ? ` → ${answerSlide(q)} (answer)` : ""}. Advance the deck yourself; the app only tracks.`
+					: "Lobby: TV on the title slide.";
+			}
+
+			// Per-question settings live inside the slide-tracker row (spec).
+			function settingsRow(q, i) {
+				const tr = document.createElement("tr");
+				tr.className = "current";
+				tr.innerHTML = `<td colspan="7"><div class="qsettings">
+					<label class="wide">Question <input type="text" data-k="prompt" value="${esc(q.prompt)}" /></label>
+					<label>Accepted answers <input type="text" data-k="answers" value="${esc(q.answers.join(", "))}" /> <span class="muted">comma-separated; first is the display answer</span></label>
+					<label>Points <input type="number" data-k="points" value="${q.points}" min="0" /></label>
+					<label>Deck slide <input type="number" data-k="slide" value="${q.slide}" min="1" /></label>
+					<label><input type="checkbox" data-k="autograde" ${q.autograde ? "checked" : ""} /> Autograde <span class="muted">(off = everything queues for you)</span></label>
+					<label>Second guess <select data-k="secondGuess">
+						<option value="grant">host grant only</option>
+						<option value="auto1">auto-allow one resubmit</option>
+						<option value="none">none</option>
+					</select></label>
+					<label>Fuzzy threshold <select data-k="threshold">
+						<option value="auto">auto — floor(len/5)</option>
+						<option value="exact">exact only</option>
+						<option value="1">1</option><option value="2">2</option><option value="3">3</option>
+					</select></label>
+					<button class="mini" data-remove="${i}">Remove question</button>
+				</div></td>`;
+				tr.querySelector('[data-k="secondGuess"]').value = q.secondGuess;
+				tr.querySelector('[data-k="threshold"]').value = q.threshold;
+				tr.querySelectorAll("[data-k]").forEach((el) =>
+					el.addEventListener("change", () => {
+						const k = el.dataset.k;
+						if (k === "answers") q.answers = el.value.split(",").map((s) => s.trim()).filter(Boolean);
+						else if (k === "points" || k === "slide") q[k] = Number(el.value) || 0;
+						else if (k === "autograde") q.autograde = el.checked;
+						else q[k] = el.value;
+						render();
+					}),
+				);
+				tr.querySelector("[data-remove]").onclick = () => {
+					if (i <= game.cur) return toast("Can't remove a question that's already been asked");
+					pack.questions.splice(i, 1);
+					openSettings = null;
+					render();
+				};
+				return tr;
+			}
+
+			function renderEvaluator() {
+				const sel = $("#evalQ");
+				sel.innerHTML = "";
+				pack.questions.forEach((q, i) => {
+					if (i <= game.cur) sel.add(new Option(`Q${i + 1}`, q.id));
+				});
+				const q = pack.questions.find((x) => x.id === game.evalQ);
+				$("#evalEmpty").style.display = q ? "none" : "block";
+				$("#evalBody").style.display = q ? "block" : "none";
+				sel.disabled = !q;
+				if (!q) return;
+				sel.value = q.id;
+				const isCur = q === curQ();
+				const open = isCur && game.phase === "collecting";
+				$("#evalMeta").textContent = open
+					? "open — answers still arriving"
+					: isCur
+						? "closed — verdicts editable, send back still reopens for review"
+						: "previous question — verdicts editable, send back disabled";
+				$("#evalPrompt").innerHTML = `${esc(q.prompt)} <span class="muted">— ${q.answers.map(esc).join(", ")} · ${q.points} pts</span>`;
+				const fig = (n, label) => {
+					const t = thumbFor(n);
+					return t ? `<figure><img src="${t.src}" class="${t.standin ? "standin" : ""}" /><figcaption>slide ${n} · ${label}${t.standin ? " (slide picture)" : ""}</figcaption></figure>` : "";
+				};
+				$("#evalThumbs").innerHTML = fig(q.slide, "question") + (q.answerSlide ? fig(q.answerSlide, "answer") : "");
+
+				// Stats strip: percentages are of players in the room, so "no answer"
+				// is visible as the gap. Correct counts confirmed-correct, same as the fold.
+				{
+					const rows = [...liveRows(q.id).values()];
+					const n = players.length;
+					const pct = (k) => (n ? Math.round((100 * k) / n) : 0);
+					const submitted = rows.length;
+					const correct = rows.filter((r) => r.verdict.state === "correct" && r.verdict.confirmed).length;
+					const incorrect = rows.filter((r) => r.verdict.state === "incorrect" && r.verdict.confirmed).length;
+					const pending = rows.filter((r) => !r.verdict.confirmed).length;
+					const tile = (label, big, small = "") => `<div class="stat"><div class="stat-big">${big}</div><div class="stat-label">${label}${small ? ` <span class="muted">${small}</span>` : ""}</div></div>`;
+					$("#evalStats").innerHTML =
+						tile("submitted", `${pct(submitted)}%`, `${submitted} of ${n}`) +
+						tile("correct", `${pct(correct)}%`, `${correct} of ${n}`) +
+						tile("incorrect", `${pct(incorrect)}%`, `${incorrect} of ${n}`) +
+						tile("pending review", pending) +
+						tile("no answer", n - submitted);
+				}
+
+				// Review queue: unconfirmed only; superseded rows never appear here.
+				// The grader's judgment is pre-highlighted (green candidate or red ✗); a
+				// click confirms it, any other click overrides and confirms.
+				const queue = $("#queue");
+				queue.innerHTML = "";
+				const items = pendingItems(q.id);
+				if (!items.length) queue.innerHTML = `<p class="muted">Nothing to review.</p>`;
+				for (const r of items) {
+					const d = document.createElement("div");
+					d.className = "qitem";
+					const v = r.verdict;
+					const why = (v.method === "manual" ? "autograde off" : `distance ${v.distance} · ${v.method}`) + ` → grader says <span class="v-${v.state === "correct" ? "ok" : "no"}">${v.state}</span>`;
+					d.innerHTML = `<div class="guess">${esc(r.payload.text)}</div>
+						<div class="muted"><span class="dot ${v.state === "correct" ? "ok" : "no"} outline"></span><b>${esc(name(r.personId))}</b> · ${why}</div>
+						<div class="choices"></div>`;
+					const ch = d.querySelector(".choices");
+					// Correct means "matches the accepted answer(s)" — the matched candidate
+					// is recorded from the grader (or the display answer if it had none).
+					const b = document.createElement("button");
+					b.className = v.state === "correct" ? "best" : "";
+					b.textContent = "✓ Correct";
+					b.onclick = () => setVerdict(q.id, r.personId, "correct", v.matched ?? q.answers[0]);
+					ch.appendChild(b);
+					const x = document.createElement("button");
+					x.className = v.state === "incorrect" ? "best-no" : "";
+					x.textContent = "✗ Incorrect";
+					x.onclick = () => setVerdict(q.id, r.personId, "incorrect", null);
+					ch.appendChild(x);
+					queue.appendChild(d);
+				}
+
+				// Submission tracker: every player, live status.
+				const tb = $("#subBody");
+				tb.innerHTML = "";
+				const live = liveRows(q.id);
+				const sorted = [...players].sort((a, b) => name(a.personId).localeCompare(name(b.personId)));
+				for (const p of sorted) {
+					const r = live.get(p.personId);
+					const history = log.filter((x) => x.questionId === q.id && x.personId === p.personId && x.superseded);
+					const tr = document.createElement("tr");
+					if (!p.connected) tr.className = "off";
+					const sentBack = open && grants.has(p.personId);
+					let verdict;
+					let confirmed = "";
+					if (sentBack) verdict = `<span class="dot back"></span><span class="v-pend">sent back</span> <span class="muted">— waiting for resubmit</span>`;
+					else if (r) {
+						const v = r.verdict;
+						const cls = v.state === "correct" ? "ok" : "no";
+						const extra = [v.state === "correct" && v.matched ? `= ${esc(v.matched)}` : "", v.distance != null ? `d${v.distance}` : "", v.overridden ? "overridden" : ""]
+							.filter(Boolean)
+							.join(" · ");
+						// outline = pending confirmation, filled = confirmed
+						verdict = `<span class="dot ${cls}${v.confirmed ? "" : " outline"}"></span><span class="v-${cls}">${v.state}</span> <span class="muted">${extra}</span>`;
+						confirmed = v.confirmed ? `<span class="muted">confirmed</span>` : `<span class="v-pend">pending</span>`;
+					} else if (open) verdict = `<span class="dot"></span><span class="muted">waiting…</span>`;
+					else verdict = `<span class="dot"></span><span class="muted">no answer · 0</span>`;
+
+					const answer = (r ? `<span class="pill">${esc(r.payload.text)}</span>` : `<span class="muted">—</span>`) +
+						history.map((h) => `<div class="superseded">${esc(h.payload.text)}</div>`).join("");
+
+					// Actions sit before the verdict so the eye lands on the buttons, then
+					// reads the outcome. The held state is highlighted on its own button.
+					// The held judgment is highlighted on its button; dashed while pending, solid once confirmed.
+					let actions = "";
+					if (r) {
+						const v = r.verdict;
+						const pend = v.confirmed ? "" : " unconfirmed";
+						actions += `<button class="mini ${v.state === "correct" ? "held-ok" + pend : ""}" data-v="correct" data-p="${p.personId}" title="${v.state === "correct" && !v.confirmed ? "confirm correct" : "mark correct"}">✓</button>`;
+						actions += `<button class="mini ${v.state === "incorrect" ? "held-no" + pend : ""}" data-v="incorrect" data-p="${p.personId}" title="${v.state === "incorrect" && !v.confirmed ? "confirm incorrect" : "mark incorrect"}">✗</button>`;
+						// Send back is a current-question power. Once the game has moved on,
+						// verdicts stay editable but the answer can't be reopened.
+						actions += isCur
+							? `<button class="mini ${sentBack ? "held-pend" : ""}" data-sendback="${p.personId}" title="${open ? "send back for resubmission + review" : "back to review"}">↩</button>`
+							: `<button class="mini" disabled title="send back only on the current question">↩</button>`;
+					}
+					tr.innerHTML = `<td>${esc(name(p.personId))}${p.connected ? "" : ' <span class="muted">(offline)</span>'}</td><td>${answer}</td><td>${actions}</td><td>${verdict}</td><td>${confirmed}</td>`;
+					tb.appendChild(tr);
+				}
+				tb.querySelectorAll("[data-sendback]").forEach((b) => (b.onclick = () => sendBack(q.id, b.dataset.sendback)));
+				tb.querySelectorAll("[data-v]").forEach(
+					(b) => (b.onclick = () => setVerdict(q.id, b.dataset.p, b.dataset.v, b.dataset.v === "correct" ? (live.get(b.dataset.p)?.verdict.matched ?? q.answers[0]) : null)),
+				);
+			}
+
+			function renderPlayers() {
+				const tb = $("#roomBody");
+				tb.innerHTML = "";
+				document.querySelectorAll(".scorecol").forEach((el) => (el.style.display = settings.showScores ? "" : "none"));
+				for (const p of standings()) {
+					const tr = document.createElement("tr");
+					if (!p.connected) tr.className = "off";
+					const joined = p.joinedAtQuestion == null ? "lobby" : `Q${p.joinedAtQuestion + 1}`;
+					tr.innerHTML = `<td>${fmtRank(p.rank)}</td><td>${esc(p.displayName)}</td><td class="scorecol" ${settings.showScores ? "" : 'style="display:none"'}>${p.score}</td><td>${joined}</td>
+						<td><span class="dot ${p.connected ? "ok" : ""}"></span>${p.connected ? "connected" : "disconnected"}</td>
+						<td><button class="mini" disabled title="post-MVP">rename</button><button class="mini" disabled title="post-MVP">merge</button><button class="mini" disabled title="post-MVP">delete</button><button class="mini" disabled title="post-MVP">kick</button></td>`;
+					tb.appendChild(tr);
+				}
+
+				// All known players (D1), filterable by tag, seedable into the lobby.
+				const tagSel = $("#tagFilter");
+				const prev = tagSel.value || "";
+				const tags = [...new Set(people.flatMap((p) => p.tags))].sort();
+				tagSel.innerHTML = `<option value="">all</option>` + tags.map((t) => `<option value="${esc(t)}">${esc(t)}</option>`).join("");
+				tagSel.value = tags.includes(prev) ? prev : "";
+				const shown = people.filter((p) => !tagSel.value || p.tags.includes(tagSel.value));
+				const pb = $("#peopleBody");
+				pb.innerHTML = "";
+				for (const p of shown) {
+					const inRoom = players.some((x) => x.personId === p.personId);
+					const tr = document.createElement("tr");
+					tr.innerHTML = `<td>${esc(p.displayName)}</td>
+						<td><input class="tags" type="text" data-tags="${p.personId}" value="${esc(p.tags.join(", "))}" placeholder="tags…" /></td>
+						<td>${p.gamesPlayed}</td>
+						<td>${inRoom ? '<span class="muted">in game</span>' : `<button class="mini" data-add="${p.personId}">Add to lobby</button>`}</td>`;
+					pb.appendChild(tr);
+				}
+				pb.querySelectorAll("[data-tags]").forEach((el) =>
+					el.addEventListener("change", () => {
+						person(el.dataset.tags).tags = el.value.split(",").map((s) => s.trim()).filter(Boolean);
+						renderPlayers();
+					}),
+				);
+				pb.querySelectorAll("[data-add]").forEach((b) => (b.onclick = () => (addToLobby(b.dataset.add), render())));
+				$("#seedBtn").onclick = () => {
+					shown.forEach((p) => addToLobby(p.personId));
+					render();
+				};
+			}
+
+			function renderSettings() {
+				$("#autoPassFuzzy").checked = settings.autoPassFuzzy;
+				$("#showVerdictsLive").checked = settings.showVerdictsLive;
+				$("#showScores").checked = settings.showScores;
+				// Real deployment: https://<worker>.workers.dev/?view=leaderboard. The mock opens a sibling page.
+				$("#boardUrl").textContent = new URL("leaderboard.html", location.href).href.replace(/^file:\/\//, "") + "   (prod: /?view=leaderboard)";
+			}
+
+			// Hand the torn-out leaderboard tab its data. In the real app that tab is
+			// its own socket client; in the mock, localStorage + the storage event
+			// stands in for the server push.
+			function publishStandings() {
+				localStorage.setItem(
+					"mockStandings",
+					JSON.stringify({ standings: standings(), showScores: settings.showScores, phase: game.phase, q: game.cur + 1, total: pack.questions.length, at: Date.now() }),
+				);
+			}
+
+			// ------------------------------------------------------------------
+			// Wiring
+			// ------------------------------------------------------------------
+			$("#nextBtn").onclick = next;
+			$("#closeBtn").onclick = closeQ;
+			$("#endBtn").onclick = endGame;
+			$("#endBtn2").onclick = endGame;
+			$("#evalQ").onchange = (e) => ((game.evalQ = e.target.value), render());
+			$("#tagFilter").onchange = renderPlayers;
+			for (const k of ["autoPassFuzzy", "showVerdictsLive", "showScores"]) {
+				$("#" + k).onchange = (e) => ((settings[k] = e.target.checked), render());
+			}
+
+			// Pack in / out — the JSON is bidirectionally editable (hand-write or build here and export).
+			$("#packFile").addEventListener("change", async (e) => {
+				const f = e.target.files[0];
+				if (!f) return;
+				try {
+					const json = JSON.parse(await f.text());
+					if (!Array.isArray(json.questions)) throw new Error("no questions[]");
+					if (game.phase !== "lobby") throw new Error("load packs in the lobby");
+					pack.title = json.title ?? f.name;
+					pack.questions = json.questions.map((q, i) => ({
+						id: q.id ?? `q${i + 1}`,
+						slide: q.slide ?? i * 2 + 2,
+						answerSlide: q.answerSlide ?? null,
+						prompt: q.prompt ?? "",
+						category: q.category ?? "",
+						flags: q.flags ?? [],
+						answers: Array.isArray(q.answers) ? q.answers : [String(q.answers ?? "")],
+						points: q.points ?? 10,
+						autograde: q.autograde ?? true,
+						secondGuess: q.secondGuess ?? "grant",
+						threshold: q.threshold ?? "auto",
+					}));
+					openSettings = null;
+					toast(`Loaded ${pack.questions.length} questions from ${f.name}`);
+					render();
+				} catch (err) {
+					toast("Couldn't load pack: " + err.message);
+				}
+				e.target.value = "";
+			});
+			$("#exportPack").onclick = () => {
+				const blob = new Blob([JSON.stringify(pack, null, "\t")], { type: "application/json" });
+				const a = Object.assign(document.createElement("a"), { href: URL.createObjectURL(blob), download: "pack.json" });
+				a.click();
+				URL.revokeObjectURL(a.href);
+			};
+			$("#addQ").onclick = () => {
+				const n = pack.questions.length + 1;
+				pack.questions.push({ id: "q" + Date.now(), slide: n * 2, prompt: "New question", answers: ["answer"], points: 10, autograde: true, secondGuess: "grant", threshold: "auto" });
+				openSettings = pack.questions.length - 1;
+				render();
+			};
+
+			// ------------------------------------------------------------------
+			// Deck import — mirrors scripts/deck2pack.py; keep the two in sync.
+			// The .pptx is a zip; slide text lives in ppt/slides/slideN.xml. A
+			// question is a pair of consecutive slides sharing a text box (question
+			// slide, then reveal slide); the answer is the "Answer:" box, else the
+			// text below the question. Anything odd is kept and flagged, not dropped.
+			// ------------------------------------------------------------------
+			const ANSWER_RE = /^\s*answer\s*:\s*/i;
+			const POINTS_RE = /for\s+(\d+)\s+points?/gi;
+			const normText = (s) => s.toLowerCase().replace(/[^\p{L}\p{N}_\s]/gu, "").replace(/\s+/g, " ").trim();
+			function sameQuestion(a, b) {
+				a = normText(a);
+				b = normText(b);
+				if (!a || !b) return false;
+				if (a === b) return true;
+				const k = Math.min(a.length, b.length);
+				return k >= 30 && a.slice(0, 30) === b.slice(0, 30) && (a.slice(0, k) === b.slice(0, k) || k >= 0.6 * Math.max(a.length, b.length));
+			}
+			const answerBox = (shapes) => shapes.find((t) => ANSWER_RE.test(t))?.replace(ANSWER_RE, "").trim() ?? null;
+			const looksLikeQuestion = (s) => s.shapes.some((t) => t.includes("?") || /point/i.test(t));
+
+			async function readDeck(file) {
+				const zip = await JSZip.loadAsync(file);
+				const RNS = "http://schemas.openxmlformats.org/officeDocument/2006/relationships";
+				const xml = async (path) => new DOMParser().parseFromString(await zip.file(path).async("string"), "application/xml");
+				const relsOf = async (path) => Object.fromEntries([...(await xml(path)).getElementsByTagName("Relationship")].map((r) => [r.getAttribute("Id"), r.getAttribute("Target")]));
+				const pres = await xml("ppt/presentation.xml");
+				const rels = await relsOf("ppt/_rels/presentation.xml.rels");
+				const order = [...pres.getElementsByTagNameNS("*", "sldId")].map((e) => rels[e.getAttributeNS(RNS, "id")]);
+				const slides = [];
+				for (const [i, target] of order.entries()) {
+					const path = "ppt/" + target.replace(/^\/?ppt\//, "").replace(/^\//, "");
+					const doc = await xml(path);
+					const shapes = [];
+					for (const sp of doc.getElementsByTagNameNS("*", "sp")) {
+						const paras = [...sp.getElementsByTagNameNS("*", "p")].map((p) => [...p.getElementsByTagNameNS("*", "t")].map((t) => t.textContent).join("").trim()).filter(Boolean);
+						if (paras.length) shapes.push(paras.join(" / "));
+					}
+					const pics = doc.getElementsByTagNameNS("*", "pic");
+					let pic = null;
+					if (pics.length) {
+						// first embedded picture → stand-in preview until real thumbnails are loaded
+						const embed = pics[0].getElementsByTagNameNS("*", "blip")[0]?.getAttributeNS(RNS, "embed");
+						const srels = await relsOf(path.replace("slides/", "slides/_rels/") + ".rels");
+						const media = embed && srels[embed] ? zip.file("ppt/" + srels[embed].replace(/^\.\.\//, "")) : null;
+						if (media) pic = URL.createObjectURL(await media.async("blob"));
+					}
+					slides.push({ slide: i + 1, shapes, pics: pics.length, pic });
+				}
+				return slides;
+			}
+
+			function buildQuestions(slides) {
+				const out = [];
+				let i = 0;
+				while (i < slides.length) {
+					const s = slides[i];
+					const nxt = slides[i + 1];
+					const flags = [];
+					let qText, cat = "", ans = answerBox(s.shapes), aSlide = null, step = 1;
+					const shared = nxt ? s.shapes.filter((t) => !ANSWER_RE.test(t) && nxt.shapes.some((u) => !ANSWER_RE.test(u) && sameQuestion(t, u))) : [];
+					if (shared.length) {
+						qText = shared.reduce((a, b) => (b.length > a.length ? b : a));
+						ans = answerBox(nxt.shapes) ?? ans;
+						const qi = s.shapes.indexOf(qText);
+						const before = shared.filter((t) => t !== qText && s.shapes.indexOf(t) < qi);
+						const after = shared.filter((t) => t !== qText && s.shapes.indexOf(t) > qi);
+						cat = before.join(" · ");
+						if (ans == null) {
+							const extra = nxt.shapes.filter((t) => !shared.some((u) => sameQuestion(t, u)));
+							ans = extra.at(-1) ?? after.at(-1) ?? "";
+							flags.push("no-answer-marker");
+						} else if (after.length) cat = [...before, ...after].join(" · ");
+						aSlide = nxt.slide;
+						step = 2;
+					} else if (ans != null || looksLikeQuestion(s)) {
+						const rest = s.shapes.filter((t) => !ANSWER_RE.test(t));
+						qText = rest.reduce((a, b) => (b.length > a.length ? b : a), "");
+						cat = rest.filter((t) => t !== qText).join(" · ");
+						flags.push("unpaired");
+						if (ans == null) {
+							flags.push("no-answer-marker");
+							ans = "";
+						}
+					} else {
+						i++;
+						continue; // title / instructions slide
+					}
+					const answers = ans ? [ans] : [];
+					if (ans.includes(" - ")) answers.push(...ans.split(" - ").map((t) => t.trim()).filter(Boolean)); // "Song - Artist": either half
+					if ((ans.match(/,/g) || []).length >= 2) flags.push("list-answer");
+					if (s.pics >= 3 || /^picture id/i.test(qText)) flags.push("picture-id");
+					const pts = [...(qText + " " + cat).matchAll(POINTS_RE)].map((m) => Number(m[1]));
+					if (pts.length > 1) flags.push("multi-part");
+					out.push({ id: `q${out.length + 1}`, slide: s.slide, answerSlide: aSlide, prompt: qText, category: cat, answers, points: pts.length === 1 ? pts[0] : 10, autograde: true, secondGuess: "grant", threshold: "auto", flags });
+					i += step;
+				}
+				return out;
+			}
+
+			$("#deckFile").addEventListener("change", async (e) => {
+				const f = e.target.files[0];
+				if (!f) return;
+				try {
+					if (game.phase !== "lobby") throw new Error("load decks in the lobby");
+					toast("Reading deck…");
+					const slides = await readDeck(f);
+					const qs = buildQuestions(slides);
+					if (!qs.length) throw new Error("no question slides recognised");
+					for (const u of deck.pics.values()) URL.revokeObjectURL(u);
+					deck.pics = new Map(slides.filter((s) => s.pic).map((s) => [s.slide, s.pic]));
+					deck.name = f.name;
+					deck.slides = slides;
+					deck.map = prefillMap(slides, qs);
+					$("#mapBtn").disabled = false;
+					$("#mapBtn").title = "";
+					pack.title = f.name.replace(/\.pptx$/i, "");
+					pack.questions = qs;
+					openSettings = null;
+					const flagged = qs.filter((q) => q.flags.length).length;
+					$("#deckNote").textContent = `${f.name}: ${slides.length} slides → ${qs.length} questions${flagged ? `, ${flagged} flagged ⚠` : ""}. Load thumbnails to replace the slide pictures with renders.`;
+					toast(`${qs.length} questions from ${slides.length} slides`);
+					render();
+					openMapper(`Auto-detected ${qs.length} questions${flagged ? `, ${flagged} flagged` : ""} — check the roles, then apply.`);
+				} catch (err) {
+					toast("Couldn't read deck: " + err.message);
+				}
+				e.target.value = "";
+			});
+
+			// ------------------------------------------------------------------
+			// Slide mapper. One row per slide: role (skip / question / answer-of-Q),
+			// which text box is the prompt, which is the answer (or typed). The
+			// auto-detector's result is just the starting point.
+			// ------------------------------------------------------------------
+			const stripAnswer = (t) => t.replace(ANSWER_RE, "").trim();
+			const short = (t, n = 70) => (t.length > n ? t.slice(0, n - 1) + "…" : t);
+
+			function prefillMap(slides, qs) {
+				const map = slides.map((s) => ({ slide: s.slide, role: "skip", forQ: null, prompt: "", answer: "" }));
+				for (const q of qs) {
+					const m = map[q.slide - 1];
+					m.role = "q";
+					m.prompt = q.prompt;
+					if (q.answerSlide) {
+						const a = map[q.answerSlide - 1];
+						Object.assign(a, { role: "a", forQ: q.slide, answer: q.answers[0] ?? "" });
+					} else m.answer = q.answers[0] ?? "";
+				}
+				return map;
+			}
+
+			function openMapper(note) {
+				$("#mapNote").textContent = note || "";
+				$("#mapper").style.display = "block";
+				$("#trackerTable").style.display = "none";
+				renderMapper();
+			}
+			function closeMapper() {
+				$("#mapper").style.display = "none";
+				$("#trackerTable").style.display = "";
+			}
+
+			function renderMapper() {
+				const tb = $("#mapBody");
+				tb.innerHTML = "";
+				const qRows = deck.map.filter((m) => m.role === "q");
+				const qNum = (slide) => qRows.findIndex((m) => m.slide === slide) + 1;
+				for (const m of deck.map) {
+					const s = deck.slides[m.slide - 1];
+					const th = thumbFor(m.slide);
+					const tr = document.createElement("tr");
+					if (m.role === "q") tr.className = "current";
+					const boxes = s.shapes.map((t) => `<div class="box" title="${esc(t)}">${esc(short(t, 90))}</div>`).join("") || `<span class="muted">no text</span>`;
+					const roleSel = `<select data-role="${m.slide}" class="short">
+							<option value="skip" ${m.role === "skip" ? "selected" : ""}>skip</option>
+							<option value="q" ${m.role === "q" ? "selected" : ""}>question</option>
+							<option value="a" ${m.role === "a" ? "selected" : ""}>answer</option>
+						</select>`;
+					const forQ =
+						m.role === "a"
+							? ` of <select data-forq="${m.slide}" class="short">${qRows.map((q) => `<option value="${q.slide}" ${q.slide === m.forQ ? "selected" : ""}>Q${qNum(q.slide)} (slide ${q.slide})</option>`).join("")}</select>`
+							: "";
+					// pick-a-box select: the slide's text boxes, plus "type…" for anything else
+					const pick = (key, value, opts) => {
+						const known = opts.includes(value);
+						return `<select data-${key}="${m.slide}" class="short">${opts.map((t) => `<option value="${esc(t)}" ${t === value ? "selected" : ""}>${esc(short(t))}</option>`).join("")}
+							<option value="__custom" ${!known ? "selected" : ""}>type…</option></select>${!known ? `<input type="text" class="mapper-input" data-${key}text="${m.slide}" value="${esc(value)}" placeholder="type it" />` : ""}`;
+					};
+					const promptCell = m.role === "q" ? pick("prompt", m.prompt, s.shapes) : "";
+					// A question row only needs its own answer picker when no answer slide feeds it.
+					const feeder = m.role === "q" ? deck.map.find((x) => x.role === "a" && x.forQ === m.slide) : null;
+					const answerCell = m.role === "skip" ? "" : feeder ? `<span class="muted">from slide ${feeder.slide}</span>` : pick("answer", m.answer, [...new Set(s.shapes.map(stripAnswer))]);
+					const label = m.role === "q" ? `<b>Q${qNum(m.slide)}</b>` : m.role === "a" ? `<span class="muted">answer</span>` : "";
+					tr.innerHTML = `<td>${th ? `<img class="thumb${th.standin ? " standin" : ""}" src="${th.src}" />` : ""}${m.slide} ${label}</td><td>${boxes}</td><td>${roleSel}${forQ}</td><td>${promptCell}</td><td>${answerCell}</td>`;
+					tb.appendChild(tr);
+				}
+				const rowOf = (el, k) => deck.map[Number(el.dataset[k]) - 1];
+				tb.querySelectorAll("[data-role]").forEach((el) =>
+					el.addEventListener("change", () => {
+						const m = rowOf(el, "role");
+						m.role = el.value;
+						if (m.role === "a" && !m.forQ) m.forQ = [...deck.map].reverse().find((x) => x.role === "q" && x.slide < m.slide)?.slide ?? qRows[0]?.slide ?? null;
+						if (m.role === "q" && !m.prompt) m.prompt = deck.slides[m.slide - 1].shapes.reduce((a, b) => (b.length > a.length ? b : a), "");
+						renderMapper();
+					}),
+				);
+				tb.querySelectorAll("[data-forq]").forEach((el) => el.addEventListener("change", () => (rowOf(el, "forq").forQ = Number(el.value))));
+				for (const key of ["prompt", "answer"]) {
+					tb.querySelectorAll(`[data-${key}]`).forEach((el) =>
+						el.addEventListener("change", () => {
+							rowOf(el, key)[key] = el.value === "__custom" ? "" : el.value;
+							renderMapper();
+							if (el.value === "__custom") tb.querySelector(`[data-${key}text="${el.dataset[key]}"]`)?.focus();
+						}),
+					);
+					tb.querySelectorAll(`[data-${key}text]`).forEach((el) => el.addEventListener("change", () => (rowOf(el, key + "text")[key] = el.value.trim())));
+				}
+			}
+
+			function applyMap() {
+				if (game.phase !== "lobby") return toast("Map slides in the lobby");
+				const prev = new Map(pack.questions.map((q) => [q.slide, q])); // keep per-question settings already edited
+				const qRows = deck.map.filter((m) => m.role === "q");
+				if (!qRows.length) return toast("No slide is marked as a question");
+				pack.questions = qRows.map((m, i) => {
+					const a = deck.map.find((x) => x.role === "a" && x.forQ === m.slide);
+					const text = (a?.answer || m.answer || "").trim();
+					const answers = text ? [text] : [];
+					if (text.includes(" - ")) answers.push(...text.split(" - ").map((t) => t.trim()).filter(Boolean));
+					const p = prev.get(m.slide);
+					return {
+						id: `q${i + 1}`,
+						slide: m.slide,
+						answerSlide: a?.slide ?? null,
+						prompt: m.prompt,
+						category: p?.category ?? "",
+						answers,
+						points: p?.points ?? 10,
+						autograde: p?.autograde ?? true,
+						secondGuess: p?.secondGuess ?? "grant",
+						threshold: p?.threshold ?? "auto",
+						flags: answers.length ? [] : ["no-answer"],
+					};
+				});
+				openSettings = null;
+				closeMapper();
+				$("#deckNote").textContent = `${deck.name}: ${deck.slides.length} slides → ${pack.questions.length} questions (mapped by hand).`;
+				toast(`${pack.questions.length} questions mapped`);
+				render();
+			}
+			$("#mapBtn").onclick = () => openMapper("Set each slide's role, then apply.");
+			$("#mapApply").onclick = applyMap;
+			$("#mapCancel").onclick = closeMapper;
+
+			// Thumbnails are matched by the number in the filename, so both
+			// deck2pack.py's slide-03.png and PowerPoint's Slide3.PNG work.
+			$("#thumbFiles").addEventListener("change", (e) => {
+				let n = 0;
+				for (const f of e.target.files) {
+					const m = f.name.match(/(\d+)\.(png|jpe?g|gif|webp)$/i);
+					if (!m) continue;
+					const k = Number(m[1]);
+					if (deck.thumbs.has(k)) URL.revokeObjectURL(deck.thumbs.get(k));
+					deck.thumbs.set(k, URL.createObjectURL(f));
+					n++;
+				}
+				toast(n ? `${n} thumbnails matched by slide number` : "No files named like slide-03.png or Slide3.PNG");
+				render();
+				e.target.value = "";
+			});
+
+			// Tabs
+			function showTab(id) {
+				document.querySelectorAll(".tabs a").forEach((a) => a.classList.toggle("active", a.dataset.tab === id));
+				document.querySelectorAll(".tab").forEach((s) => s.classList.toggle("active", s.id === "tab-" + id));
+				try {
+					localStorage.setItem("hostTab", id);
+				} catch {}
+			}
+			document.querySelectorAll(".tabs a").forEach((a) =>
+				a.addEventListener("click", (e) => {
+					e.preventDefault();
+					showTab(a.dataset.tab);
+				}),
+			);
+
+			// Simulated player activity
+			function pool() {
+				const q = curQ();
+				if (!q || game.phase === "ended") return [];
+				const live = liveRows(q.id);
+				return players.filter((p) => p.connected && (grants.has(p.personId) || (game.phase === "collecting" && !live.has(p.personId))));
+			}
+			function pickAnswerer() {
+				const c = pool();
+				const granted = c.filter((p) => grants.has(p.personId)); // a sent-back player answers first
+				const src = granted.length ? granted : c;
+				return src.length ? src[Math.floor(Math.random() * src.length)] : null;
+			}
+			document.querySelectorAll("[data-sim]").forEach((b) =>
+				b.addEventListener("click", () => {
+					const act = b.dataset.sim;
+					if (act === "exact" || act === "fuzzy" || act === "wrong") {
+						const p = pickAnswerer();
+						if (!p) return toast(curQ() ? "Everyone connected has answered (or the question is closed)" : "Start the game first");
+						submit(p.personId, act);
+					} else if (act === "all") {
+						const c = pool();
+						if (!c.length) return toast("Nobody left to answer");
+						for (const p of c) {
+							const r = Math.random();
+							submit(p.personId, r < 0.6 ? "exact" : r < 0.85 ? "fuzzy" : "wrong");
+						}
+					} else if (act === "toggle") {
+						const p = players[Math.floor(Math.random() * players.length)];
+						p.connected = !p.connected;
+						toast(`${name(p.personId)} ${p.connected ? "reconnected" : "dropped"} — cosmetic only`);
+						render();
+					} else if (act === "joiner") {
+						const nxt = people.find((x) => !players.some((p) => p.personId === x.personId));
+						if (!nxt) return toast("Everyone known is already in");
+						addToLobby(nxt.personId);
+						toast(`${nxt.displayName} joined${game.cur >= 0 ? ` at Q${game.cur + 1}` : ""} — earlier questions score 0`);
+						render();
+					}
+				}),
+			);
+
+			let saved = null;
+			try {
+				saved = localStorage.getItem("hostTab");
+			} catch {}
+			showTab(saved || "tracker");
+			render();
+		</script>
+	</body>
+</html>
