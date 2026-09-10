@@ -339,3 +339,43 @@ body.rbd .say {
 body.rbd #crewlist li {
 	border-bottom: 1px solid var(--ega-dark);
 }
+
+/* Reilly gives up height first on a short screen: the dialogue drops to one
+   grid step and his portrait to a smaller slice, which between them buys back
+   roughly the 70px the SE was short. */
+@media (max-height: 780px) {
+	body.rbd #reilly .portrait {
+		max-height: 15vh;
+	}
+	body.rbd .say {
+		font-size: 14px;
+		line-height: 18px;
+		min-height: 36px;
+	}
+	body.rbd .topbar {
+		margin: -10px -14px 8px;
+		padding: 5px 10px;
+	}
+}
+
+@media (max-height: 600px) {
+	body.rbd #reilly .portrait {
+		max-height: 13vh;
+	}
+	body.rbd #reilly.on {
+		margin-bottom: 4px;
+	}
+}
+
+/* With a question up on a short phone, Reilly steps back so the answer box and
+   the buttons keep their room. He stays on screen — he just gets smaller. */
+@media (max-height: 780px) {
+	body.rbd.q #reilly .portrait {
+		max-height: 11vh;
+	}
+	body.rbd.q .say {
+		font-size: 13px;
+		line-height: 16px;
+		min-height: 32px;
+	}
+}

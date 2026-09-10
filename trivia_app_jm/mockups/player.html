@@ -325,8 +325,14 @@
 
 			// ---- rendering ---------------------------------------------------
 			const STATES = ["join", "teams", "team", "lobby", "answer", "submitted", "captain", "sitout", "reveal"];
+			// A short phone cannot hold the answer box, Reilly and the whole crew at
+			// once. When a question is up the answer wins: the crew list stands down
+			// and the portrait shrinks. The roster is a glance, the answer is the job.
+			const SHORT = () => window.matchMedia("(max-height: 780px)").matches;
+			const IN_QUESTION = ["answer", "submitted", "captain", "reveal"];
 			function show(state) {
 				for (const s of STATES) $("#s-" + s).style.display = s === state ? "flex" : "none";
+				document.body.classList.toggle("q", IN_QUESTION.includes(state));
 				renderReilly(state);
 				renderCrew();
 				renderCrewbar();
@@ -343,7 +349,9 @@
 			function renderCrew() {
 				const el = $("#crewlist");
 				const t = myTeam();
-				const on = teamsOn() && t && game.name && !["join", "teams"].includes(visibleScreen());
+				const screen = visibleScreen();
+				const room = !(SHORT() && IN_QUESTION.includes(screen));
+				const on = teamsOn() && t && game.name && !["join", "teams"].includes(screen) && room;
 				el.style.display = on ? "" : "none";
 				if (on) el.innerHTML = rosterHtml(t);
 			}

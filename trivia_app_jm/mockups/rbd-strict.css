@@ -396,3 +396,55 @@ body.rbd.strict .rbd-tag {
 	color: var(--ground);
 }
 
+
+/* Same, at strict sizes. 16/20 is still whole bricks, so the grid holds. */
+@media (max-height: 780px) {
+	body.rbd.strict .say {
+		font-size: 16px;
+		line-height: 20px;
+		min-height: 40px;
+	}
+	body.rbd.strict h1 {
+		font-size: 16px;
+		line-height: 20px;
+	}
+	body.rbd.strict .screen {
+		padding: 10px 14px 12px;
+	}
+	body.rbd.strict .topbar {
+		margin: -10px -14px 8px;
+		padding: 5px 10px;
+	}
+	body.rbd.strict .roster li,
+	body.rbd.strict #crewlist li {
+		padding: 2px 6px 4px;
+	}
+	body.rbd.strict button,
+	body.rbd.strict .btn {
+		padding: 4px 10px;
+	}
+}
+
+@media (max-height: 600px) {
+	body.rbd.strict #reilly.on {
+		margin-bottom: 4px;
+	}
+	body.rbd.strict .roster li,
+	body.rbd.strict #crewlist li {
+		padding: 1px 6px 3px;
+	}
+	body.rbd.strict .screen {
+		padding: 8px 12px 10px;
+	}
+	body.rbd.strict .topbar {
+		margin: -8px -12px 6px;
+	}
+}
+
+@media (max-height: 780px) {
+	body.rbd.strict.q .say {
+		font-size: 16px;
+		line-height: 20px;
+		min-height: 40px;
+	}
+}

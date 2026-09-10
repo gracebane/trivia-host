@@ -209,7 +209,12 @@ body.player {
 
 /* vertically center the active state's content in the screen */
 .state {
-	flex: 1;
+	flex: 1 1 auto;
+	/* deliberately NOT min-height:0. Letting this shrink below its content made
+	   the centred contents spill both ways and sit on top of Reilly above and
+	   the crew list below, while the container reported no overflow at all —
+	   a layout that looks broken but measures clean. If it does not fit, it
+	   must overflow honestly so the fix is to make the content smaller. */
 	display: flex;
 	flex-direction: column;
 	justify-content: center;
@@ -1481,4 +1486,70 @@ button.iconbtn.on {
 	flex: 0 0 auto;
 	width: 100%;
 	margin-top: 8px;
+}
+
+/* ---- short screens ----
+   Nothing on a phone should ever need scrolling: the whole point is that the
+   answer box is under your thumb the moment you look down. The iPhone SE at
+   568px is the binding case, so everything that can give, gives here. */
+@media (max-height: 780px) {
+	.screen {
+		padding: 10px 14px 12px;
+	}
+	.state {
+		gap: 8px;
+	}
+	.roster li,
+	.roster.small li {
+		padding: 2px 6px;
+	}
+	#crewlist,
+	#mutinyPanel {
+		margin-top: 4px;
+	}
+	#mutinyPanel {
+		padding: 4px 8px;
+	}
+	#crewbar {
+		padding-top: 4px;
+	}
+	/* the crew list right above already names everyone, so the mutiny list
+	   tightens to its own rows rather than repeating at full height */
+	#mutinyPanel .roster li {
+		padding: 1px 4px;
+	}
+	#mutinyPanel p {
+		font-size: 11px;
+	}
+	button.iconbtn img {
+		width: 30px;
+	}
+	.guessrow {
+		padding: 3px 0;
+	}
+}
+
+/* ---- the very short ones (iPhone SE 1st gen, 568px) ----
+   A second, tighter tier. Measured on that screen the answer state, Reilly and
+   the crew list together ran about 10px past the frame; these claw back ~20. */
+@media (max-height: 600px) {
+	.state {
+		gap: 6px;
+	}
+	.roster li,
+	.roster.small li,
+	#crewlist li {
+		padding: 1px 6px;
+	}
+	#crewlist {
+		margin-top: 2px;
+		margin-bottom: 4px;
+	}
+	.topbar {
+		padding-bottom: 6px;
+		margin-bottom: 6px;
+	}
+	.qnum {
+		margin: 0;
+	}
 }

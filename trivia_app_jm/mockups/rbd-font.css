@@ -66,3 +66,14 @@ body.rbd.mono .say {
 	line-height: 28px;
 	min-height: 56px; /* two lines, same reserved block as the SCUMM sizes */
 }
+
+@media (max-height: 780px) {
+	body.rbd.mono h1,
+	body.rbd.mono .say {
+		font-size: 16px;
+		line-height: 20px;
+	}
+	body.rbd.mono .say {
+		min-height: 40px;
+	}
+}

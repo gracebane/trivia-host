@@ -1,0 +1,55 @@
+# Files kept locally but not shipped to Gracie's repo: comparison sheets,
+# rejected design candidates, and icon sizes the app never requests.
+# Anything the generator scripts can rebuild is fair to leave out.
+
+# --- contact sheets: made to look at, never loaded by a page ---
+assets/ega/hat/sheet*.png
+assets/ega/hat/actual-size.png
+assets/ega/ega_reilly/sheet*.png
+assets/ega/ega_reilly/tile-*.png
+assets/ega/frames/
+
+# --- mutiny symbols that lost the bake-off (the plank won) ---
+assets/ega/hat/mutiny-blackspot.png
+assets/ega/hat/mutiny-cutlass.png
+assets/ega/hat/mutiny-flag.png
+assets/ega/hat/mutiny-noose.png
+
+# --- icon sizes nothing asks for: the app uses 24, and 25 for the tricorn ---
+assets/ega/hat/hat-mono-*.png
+assets/ega/hat/hat-navy-12.png
+assets/ega/hat/hat-navy-16.png
+assets/ega/hat/hat-navy-20.png
+assets/ega/hat/bandana-red-12.png
+assets/ega/hat/bandana-red-16.png
+assets/ega/hat/bandana-red-20.png
+assets/ega/hat/bandana-green-12.png
+assets/ega/hat/bandana-green-16.png
+assets/ega/hat/bandana-green-20.png
+assets/ega/hat/hat-pirate-red-13.png
+assets/ega/hat/hat-pirate-red-17.png
+assets/ega/hat/hat-pirate-red-21.png
+assets/ega/hat/hat-pirate-green-13.png
+assets/ega/hat/hat-pirate-green-17.png
+assets/ega/hat/hat-pirate-green-21.png
+assets/ega/hat/mutiny-plank-16.png
+assets/ega/hat/mutiny-plank-20.png
+assets/ega/hat/captain_ega_pixelated.png
+
+# --- EGA converter output: experiments, not app assets ---
+assets/ega/ega_reilly/IMG_5278*.png
+assets/ega/ega_reilly/ummbazinga.*
+assets/ega/ega_reilly/bazinga_*.png
+assets/ega/ega_reilly/palette-from-portrait.png
+assets/ega/4498d8524a3afb7b053af2b66ba63207.jpg
+assets/ega/ummbazinga.*
+
+# --- photo working files: multi-megabyte originals and intermediates ---
+assets/originals/
+
+# Used by: rsync -a --delete --exclude-from=scripts/grace-exclude.txt \
+#            --exclude node_modules --exclude .git --exclude .wrangler \
+#            --exclude .DS_Store --exclude worker-configuration.d.ts \
+#            --exclude /README.md  ./  ~/trivia-host/trivia_app_jm/
+# then remove anything already committed that now matches, since rsync's
+# --delete deliberately protects excluded files on the receiving side.
