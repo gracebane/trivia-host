@@ -17,11 +17,9 @@
 
 		<div class="hostwrap">
 			<div class="hostbar">
-				<div>
-					<span class="brand-sm">Trivia</span> <span class="muted">host · <span id="code"></span></span>
-				</div>
 				<div class="hostbar-mid" id="status"></div>
 				<div>
+					<button id="handoffTop" class="primary" style="display: none"></button>
 					<button id="nextBtn">Next question ›</button>
 					<button id="closeBtn">Close question</button>
 					<button id="endBtn" class="danger">End game</button>
@@ -39,12 +37,12 @@
 			<section class="tab" id="tab-tracker">
 				<div class="toolbar">
 					<label class="btn">Load deck (.pptx)<input type="file" id="deckFile" accept=".pptx" hidden /></label>
-					<label class="btn">Load thumbnails<input type="file" id="thumbFiles" accept="image/*" multiple hidden /></label>
-					<button id="mapBtn" disabled title="load a deck first">Map slides</button>
+					<label class="btn nb">Load thumbnails<input type="file" id="thumbFiles" accept="image/*" multiple hidden /></label>
+					<button id="mapBtn" class="nb" disabled title="load a deck first">Map slides</button>
 					<label class="btn">Load pack (JSON)<input type="file" id="packFile" accept=".json,application/json" hidden /></label>
 					<button id="exportPack">Export pack</button>
 					<button id="addQ">+ Question</button>
-					<span class="muted" id="deckNote">No deck loaded. A deck fills the list from its slides; thumbnails come from <code>scripts/deck2pack.py</code> or PowerPoint's export-as-images.</span>
+					<span class="muted" id="deckNote">No deck loaded.</span>
 				</div>
 				<!-- Slide mapper: the host assigns roles by hand. Auto-detection only
 				     pre-fills it — not every deck follows the pair-of-slides convention. -->
@@ -67,19 +65,14 @@
 						</thead>
 						<tbody id="mapBody"></tbody>
 					</table>
-					<p class="note">
-						Question numbers follow slide order. An answer slide belongs to any question, not just the one above it, so a
-						block of answer slides at the end works. If the answer is on the question slide itself (animated reveal) or in
-						no text box at all (picture round), set it on the question row or type it.
-					</p>
 				</section>
 				<table class="grid" id="trackerTable">
 					<thead>
 						<tr>
 							<th>#</th>
 							<th>Deck slide</th>
-							<th>Question</th>
-							<th>Accepted answers</th>
+							<th id="thQ">Question</th>
+							<th class="nb">Accepted answers</th>
 							<th>Pts</th>
 							<th>Status</th>
 							<th></th>
@@ -88,48 +81,42 @@
 					<tbody id="trackerBody"></tbody>
 				</table>
 				<p class="note" id="deckHint"></p>
-				<p class="note">
-					Deck drift is an accepted cost of this design: the app's idea of the current question can diverge from the TV.
-					The <i>Deck slide</i> column and the thumbnails are the sync aid — reference only, never a display source.
-					⚠ marks a question the extractor wasn't sure about (list answers, no "Answer:" box, picture rounds); fix it in
-					<i>settings</i> or remove it.
-				</p>
 			</section>
 
 			<!-- ================= GUESS EVALUATOR ================= -->
 			<section class="tab" id="tab-evaluator">
+				<!-- Hand-off: the laptop goes to whoever wrote the question. Only their
+				     question is reachable — no tabs, no picker, no strip — until it
+				     comes back. In the real app "Return to host" asks for the passphrase. -->
+				<div id="handoffBar">
+					<b id="handoffWho"></b>
+					<span class="muted">is grading. Everything else is hidden until the laptop comes back.</span>
+					<button id="handoffClose">Close question</button>
+					<button id="handoffNext" class="primary"></button>
+					<button id="handoffReturn">Return to host</button>
+				</div>
 				<div class="toolbar">
 					<label>Question <select id="evalQ" class="short"></select></label>
 					<span class="muted" id="evalMeta"></span>
+					<button id="handoffBtn" class="primary" style="display: none"></button>
 				</div>
 				<p class="eval-prompt" id="evalPrompt"></p>
 				<div class="thumbs" id="evalThumbs"></div>
-				<div id="evalEmpty" class="muted">No question open yet — start the game from the strip above.</div>
+				<div id="evalEmpty" class="muted">No question open yet.</div>
 				<div id="evalBody" style="display: none">
 					<div class="stats" id="evalStats"></div>
-					<h2>Review queue <span class="muted">— everything not yet confirmed, closest first; the grader's call is pre-highlighted, one click confirms it</span></h2>
+					<h2>Review queue</h2>
 					<div id="queue"></div>
 
-					<h2>Submission tracker <span class="muted">— who's in, who isn't; the only signal for when to close</span></h2>
+					<h2>Submission tracker</h2>
 					<table class="grid">
-						<thead>
-							<tr>
-								<th>Player</th>
-								<th>Answer</th>
-								<th>Actions</th>
-								<th>Verdict</th>
-								<th>Confirmed</th>
-							</tr>
-						</thead>
+						<thead id="subHead"></thead>
 						<tbody id="subBody"></tbody>
 					</table>
 					<p class="note">
 						<span class="dot ok"></span>correct, confirmed &nbsp; <span class="dot ok outline"></span>correct, pending &nbsp; <span class="dot no"></span>incorrect, confirmed &nbsp;
 						<span class="dot no outline"></span>incorrect, pending &nbsp; <span class="dot back"></span>sent back &nbsp; <span class="dot"></span>no answer.
-						Outline = pending your confirmation; filled = confirmed. Only confirmed-correct scores.
-						Exact matches (and fuzzy matches when <code>autoPassFuzzy</code> is on) arrive confirmed; everything else arrives pending.
-						✓ ✗ confirm or flip the judgment (any question, any time); ↩ <b>Send back</b> reopens it for review and, while the question is open, hands the player their textbox back.
-						Greyed rows are disconnected — cosmetic only.
+						Outline = pending your confirmation; filled = confirmed.
 					</p>
 				</div>
 			</section>
@@ -150,7 +137,24 @@
 					</thead>
 					<tbody id="roomBody"></tbody>
 				</table>
-				<p class="note">Ties take the average of the tied ranks. Rename / merge / delete / kick are the host identity panel — post-MVP, shown disabled.</p>
+				<p class="note" id="tieNote"></p>
+
+				<!-- Birthday Mode: the deck names an author per question; pair each with
+				     whoever actually logged in. The pairing is what makes that player's
+				     phone say "this one's yours" and sit the question out. -->
+				<div class="bday-only">
+					<h2>Question authors</h2>
+					<table class="grid">
+						<thead>
+							<tr>
+								<th>#</th>
+								<th>Deck says</th>
+								<th>Logged-in player</th>
+							</tr>
+						</thead>
+						<tbody id="authorBody"></tbody>
+					</table>
+				</div>
 
 				<h2>All known players <span class="muted">— D1 total player list, independent of any room</span></h2>
 				<div class="toolbar">
@@ -173,31 +177,64 @@
 
 			<!-- ================= SESSION SETTINGS ================= -->
 			<section class="tab" id="tab-settings">
-				<h2>Grading</h2>
-				<div class="settingrow"><label><input type="checkbox" id="autoPassFuzzy" /> <code>autoPassFuzzy</code> — auto-resolve fuzzy matches to correct instead of queueing them</label></div>
-				<div class="settingrow"><label><input type="checkbox" id="showVerdictsLive" /> <code>showVerdictsLive</code> — players see verdicts as they're graded, not just at reveal</label></div>
-				<p class="note">Settings are read at point of use: a mid-game change applies going forward only. Nothing is baked in at game start.</p>
+				<div class="panels">
+					<section class="panel">
+						<h2>Grading</h2>
+						<div class="settingrow"><label><input type="checkbox" id="birthdayMode" /> Reilly Birthday Mode</label></div>
+						<div class="settingrow"><label><input type="checkbox" id="autoPassFuzzy" /> Auto-pass fuzzy matches</label></div>
+						<div class="settingrow"><label><input type="checkbox" id="showVerdictsLive" /> Show verdicts live</label></div>
+					</section>
 
-				<h2>Leaderboard</h2>
-				<div class="settingrow"><label><input type="checkbox" id="showScores" /> Show scores alongside ranks</label></div>
-				<div class="settingrow">
-					<a class="btn" id="openBoard" href="leaderboard.html" target="_blank">Open leaderboard tab</a>
-					<code id="boardUrl"></code>
-					<span class="muted">Tear the tab out to the TV once at setup; alt-tab to it between rounds. Or point a tablet at the URL.</span>
-				</div>
-				<p class="note">Laptop → TV must be <b>Extend</b>, never Duplicate — Duplicate leaks this screen.</p>
+					<section class="panel">
+						<h2>Leaderboard</h2>
+						<div class="settingrow"><label><input type="checkbox" id="showScores" /> Show scores</label></div>
+						<div class="settingrow"><label><input type="checkbox" id="showPointsOnPhones" /> Show points on phones</label></div>
+						<div class="settingrow"><label><input type="checkbox" id="sharedRank" /> Ties share better rank</label> <span class="muted" id="rankHint"></span></div>
+						<div class="settingrow"><a class="btn" id="openBoard" href="leaderboard.html" target="_blank">Open leaderboard</a></div>
+						<div class="settingrow"><code id="boardUrl"></code></div>
+						<div class="settingrow muted">TV: Extend, not Duplicate</div>
+					</section>
 
-				<h2>Access</h2>
-				<div class="settingrow">Player password <code>imstupid</code> &nbsp; Host passphrase <code>imwithstupid</code> <span class="muted">— hardcoded for now, mutable later</span></div>
-				<div class="settingrow">
-					<span class="muted">Host session: signed in via passphrase, token in localStorage. The passphrase itself works from any device (battery-death recovery).</span>
-					<a class="plain" href="index.html">Sign out</a>
-				</div>
+					<section class="panel">
+						<h2>Access</h2>
+						<div class="settingrow">Player <code>imstupid</code></div>
+						<div class="settingrow">Host <code>imwithstupid</code></div>
+						<div class="settingrow"><a class="plain" id="signOut" href="index.html">Sign out</a></div>
+					</section>
 
-				<h2>Game</h2>
-				<div class="settingrow">
-					<button id="endBtn2" class="danger">End game</button>
-					<span class="muted">Immediate: archives the log to D1 and freezes the room. Leaderboard stays reachable; a mis-click is undoable. Idle GC after 12 h does the actual delete.</span>
+					<section class="panel">
+						<h2>Game</h2>
+						<div class="settingrow"><button id="endBtn2" class="danger">End game</button></div>
+					</section>
+
+					<section class="panel wide">
+						<h2>Question defaults</h2>
+						<div class="settingrow">
+							<label>Type <select id="defaultKind" class="short">
+								<option value="single">Single answer</option>
+								<option value="list">List answer</option>
+							</select></label>
+							&nbsp; <label>Guesses <select id="defaultGuesses" class="short"><option>1</option><option>2</option><option>3</option><option>4</option><option>5</option><option>6</option></select></label>
+						</div>
+						<div class="settingrow nb">
+							<label><input type="checkbox" id="defaultAutograde" /> Autograde</label>
+							&nbsp; <label>Threshold <select id="defaultThreshold" class="short">
+								<option value="auto">auto (len/3)</option>
+								<option value="exact">exact</option>
+								<option value="1">1</option><option value="2">2</option><option value="3">3</option>
+							</select></label>
+						</div>
+
+						<h3>Single answer</h3>
+						<div class="settingrow">Points by guess <span id="defaultSchedule" class="sched"></span></div>
+
+						<h3>List answer</h3>
+						<div class="settingrow">
+							<label>Points per element <input type="number" id="defaultPointsPer" min="0" /></label>
+							&nbsp; <label><input type="checkbox" id="defaultOrderX" /> Order across →</label>
+							&nbsp; <label><input type="checkbox" id="defaultOrderY" /> Order down ↓</label>
+						</div>
+					</section>
 				</div>
 			</section>
 		</div>
@@ -223,14 +260,30 @@
 			const pack = {
 				title: "Party pack",
 				questions: [
-					{ id: "q1", slide: 2, prompt: "Capital of Australia?", answers: ["Canberra"], points: 10, autograde: true, secondGuess: "grant", threshold: "auto" },
-					{ id: "q2", slide: 4, prompt: "Who painted the Sistine Chapel ceiling?", answers: ["Michelangelo"], points: 10, autograde: true, secondGuess: "grant", threshold: "auto" },
-					{ id: "q3", slide: 6, prompt: "Chemical symbol for gold?", answers: ["Au"], points: 5, autograde: true, secondGuess: "grant", threshold: "auto" },
-					{ id: "q4", slide: 8, prompt: "Year the Berlin Wall fell?", answers: ["1989"], points: 10, autograde: true, secondGuess: "none", threshold: "exact" },
-					{ id: "q5", slide: 10, prompt: "Which band released Rumours?", answers: ["Fleetwood Mac"], points: 15, autograde: true, secondGuess: "grant", threshold: "auto" },
-					{ id: "q6", slide: 12, prompt: "Largest moon of Saturn?", answers: ["Titan"], points: 10, autograde: true, secondGuess: "grant", threshold: "auto" },
-					{ id: "q7", slide: 14, prompt: "Author of Pride and Prejudice?", answers: ["Jane Austen", "Austen"], points: 10, autograde: true, secondGuess: "grant", threshold: "auto" },
-					{ id: "q8", slide: 16, prompt: "Bonus: 16th US president", answers: ["Abraham Lincoln", "Lincoln"], points: 20, autograde: false, secondGuess: "grant", threshold: "auto" },
+					{ id: "q1", slide: 2, prompt: "Capital of Australia?", answers: ["Canberra"], points: 8, autograde: true, guesses: 2, threshold: "auto" },
+					{ id: "q2", slide: 4, prompt: "Who painted the Sistine Chapel ceiling?", answers: ["Michelangelo"], points: 8, autograde: true, guesses: 2, threshold: "auto" },
+					{ id: "q3", slide: 6, prompt: "Chemical symbol for gold?", answers: ["Au"], points: 5, autograde: true, guesses: 2, threshold: "auto" },
+					{ id: "q4", slide: 8, prompt: "Year the Berlin Wall fell?", answers: ["1989"], points: 8, autograde: true, guesses: 1, threshold: "exact" },
+					{ id: "q5", slide: 10, prompt: "Which band released Rumours?", answers: ["Fleetwood Mac"], points: 15, autograde: true, guesses: 2, threshold: "auto" },
+					{ id: "q6", slide: 12, prompt: "Largest moon of Saturn?", answers: ["Titan"], points: 8, autograde: true, guesses: 2, threshold: "auto" },
+					{ id: "q7", slide: 14, prompt: "Author of Pride and Prejudice?", answers: ["Jane Austen", "Austen"], points: 8, autograde: true, guesses: 2, threshold: "auto" },
+					{ id: "q8", slide: 16, prompt: "Bonus: 16th US president", answers: ["Abraham Lincoln", "Lincoln"], points: 20, autograde: false, guesses: 2, threshold: "auto" },
+					{
+						id: "q9", slide: 18, prompt: "Name the four Beatles", kind: "list", pointsPer: 2, orderX: false, orderY: false,
+						grid: [[["John Lennon", "Lennon"]], [["Paul McCartney", "McCartney"]], [["George Harrison", "Harrison"]], [["Ringo Starr", "Ringo"]]],
+						answers: [], autograde: true, guesses: 2, threshold: "auto",
+					},
+					{
+						// 2 columns × 3 rows. Order matters across (country then capital),
+						// not down (the three pairs may come in any order).
+						id: "q10", slide: 20, prompt: "Name three countries and their capitals", kind: "list", pointsPer: 2, orderX: true, orderY: false,
+						grid: [
+							[["France"], ["Paris"]],
+							[["Japan"], ["Tokyo"]],
+							[["Peru"], ["Lima"]],
+						],
+						answers: [], autograde: true, guesses: 2, threshold: "auto",
+					},
 				],
 			};
 
@@ -262,23 +315,121 @@
 			];
 
 			// Append-only answer log. Scores are a fold over this, never stored.
-			// Row: { questionId, personId, deviceId, payload, submittedAt, verdict, superseded }
+			// Row: { id, questionId, personId, guessNo, deviceId, payload, submittedAt, verdict, superseded }
+			// A player may hold several live rows for one question, one per guess. `superseded`
+			// is set only when a send-back replaces a guess; the replaced text is kept.
+			let rowSeq = 0;
 			const log = [];
 			// Resubmission grants: per-player, only while the question is open.
 			const grants = new Set();
 
-			const settings = { autoPassFuzzy: false, showVerdictsLive: false, showScores: true };
+			const settings = { autoPassFuzzy: false, showVerdictsLive: false, showScores: true, showPointsOnPhones: false, sharedRank: true, birthdayMode: false, defaultGuesses: 2, defaultSchedule: [8, 8], defaultAutograde: true, defaultThreshold: "auto", defaultKind: "single", defaultPointsPer: 2, defaultOrderX: false, defaultOrderY: false };
+			// Question kinds. `single` is one response judged against an answer key —
+			// everything the app did before this existed. `list` is several elements
+			// judged against a grid, scoring a fixed number of points per element.
+			const KINDS = { single: "Single answer", list: "List answer" };
+			const MAX_GUESSES = 6;
+			const allowedGuesses = (q) => Math.min(MAX_GUESSES, q.guesses ?? settings.defaultGuesses);
+			// Points are a schedule, one entry per guess: what you get if that guess is
+			// the first one confirmed correct. A bare number means the same for every
+			// guess; a short array is padded by repeating its last value.
+			function resize(arr, n) {
+				const a = Array.isArray(arr) ? arr.map((v) => Math.max(0, Number(v) || 0)) : [Math.max(0, Number(arr) || 0)];
+				while (a.length < n) a.push(a[a.length - 1] ?? 0);
+				return a.slice(0, n);
+			}
+			const schedule = (q) => resize(q.points, allowedGuesses(q));
+			const pointsFor = (q, guessNo) => schedule(q)[Math.min(guessNo, allowedGuesses(q)) - 1];
+			// "8" when every guess pays the same, "8 · 4" otherwise
+			const ptsLabel = (q) => {
+				if (isList(q)) return `${q.pointsPer ?? 0}/element${gridFilled(q) ? ` · ${listMax(q)} max` : ""}`;
+				const sc = schedule(q);
+				return sc.every((v) => v === sc[0]) ? String(sc[0]) : sc.join(" · ");
+			};
+			// Always MAX_GUESSES boxes; the ones past the allowance are disabled and greyed
+			// (showing what they'd inherit) so changing the guess count never reflows the row.
+			function pointBoxes(full, active, attr) {
+				return full
+					.map((v, g) => `<input type="number" data-${attr}="${g}" value="${v}" min="0" ${g < active ? "" : "disabled"} title="${g < active ? `guess ${g + 1}` : `guess ${g + 1} — unused at ${active} guesses`}" />`)
+					.join(" ");
+			}
+
+			// Give a freshly made question its guesses and a full-length schedule.
+			function normalizeQ(q) {
+				q.kind = q.kind ?? settings.defaultKind;
+				q.guesses = Math.min(MAX_GUESSES, Math.max(1, Number(q.guesses ?? settings.defaultGuesses) || 1));
+				q.points = resize(q.points ?? settings.defaultSchedule, q.guesses);
+				q.autograde = q.autograde ?? settings.defaultAutograde; // an explicit false (birthday mode) still wins
+				q.threshold = q.threshold ?? settings.defaultThreshold;
+				if (q.kind === "list") {
+					q.pointsPer = q.pointsPer ?? settings.defaultPointsPer;
+					q.orderX = q.orderX ?? settings.defaultOrderX;
+					q.orderY = q.orderY ?? settings.defaultOrderY;
+					// grid[row][col] = accepted variants for that element
+					if (!Array.isArray(q.grid) || !q.grid.length) q.grid = [[[]]];
+				}
+				return q;
+			}
+
+			// ---- list-answer helpers ----
+			const isList = (q) => q.kind === "list";
+			const gridRows = (q) => (Array.isArray(q.grid) && q.grid.length ? q.grid : [[[]]]);
+			const gridDims = (q) => ({ rows: gridRows(q).length, cols: gridRows(q)[0].length });
+			// every cell in reading order, left to right then down
+			const gridCells = (q) => gridRows(q).flat();
+			// how many elements are actually filled in — the denominator the host sees
+			const gridFilled = (q) => gridCells(q).filter((c) => c.length).length;
+			const listMax = (q) => (q.pointsPer ?? 0) * gridFilled(q);
+			// The most a question can pay: the whole grid for a list, the best guess for a single.
+			const maxPoints = (q) => (isList(q) ? listMax(q) : Math.max(...schedule(q)));
 			// phase ∈ lobby | collecting | revealing | ended.  cur = index into pack.questions.
-			const game = { phase: "lobby", cur: -1, before: null, evalQ: null };
+			const game = { phase: "lobby", cur: -1, before: null, evalQ: null, handoff: false };
 			let openSettings = null; // which tracker row has its settings expanded
+			pack.questions.forEach(normalizeQ); // the mock pack's bare numbers become schedules
 			// Deck reference material. thumbs = real renders keyed by slide number;
 			// pics = each slide's first embedded picture, a stand-in until thumbs load.
 			const deck = { name: null, thumbs: new Map(), pics: new Map(), slides: [], map: [] };
-			const thumbFor = (n) => (deck.thumbs.has(n) ? { src: deck.thumbs.get(n), standin: false } : deck.pics.has(n) ? { src: deck.pics.get(n), standin: true } : null);
+			// Birthday mode: thumbnails would show the question, so there are none.
+			const thumbFor = (n) => (bday() ? null : deck.thumbs.has(n) ? { src: deck.thumbs.get(n), standin: false } : deck.pics.has(n) ? { src: deck.pics.get(n), standin: true } : null);
+
+			// ---- Reilly Birthday Mode helpers ----
+			const bday = () => settings.birthdayMode;
+			// In birthday mode the host is playing too, so the guesses stay covered
+			// while the host holds the laptop. Handing it to the author uncovers them.
+			// Only the text is hidden — every grading control still works.
+			const hideGuesses = () => bday() && !game.handoff;
+			const DOTS = "••••••";
+			const normName = (t) => String(t || "").toLowerCase().replace(/[^a-z0-9]/g, "");
+			// The author of a question sits it out: they know the answer and they're grading.
+			// An explicit pairing (authorId) wins; otherwise fall back to matching the
+			// deck's name against the display name, which is right most of the time.
+			// authorId: null = unset (fall back to the name match), "none" = the host said nobody, else a personId.
+			const isAuthor = (q, pid) => bday() && (q.authorId ? q.authorId !== "none" && q.authorId === pid : !!q.author && normName(name(pid)) === normName(q.author));
+			const guessedAuthor = (q) => players.find((p) => q.author && normName(name(p.personId)) === normName(q.author))?.personId ?? null;
+			const eligible = (q) => players.filter((p) => !isAuthor(q, p.personId));
+			// What a question is called in the UI: its author in birthday mode, its number otherwise.
+			const qLabel = (q, i) => (bday() && q.author ? q.author : String(i + 1));
 			const answerSlide = (q) => q.answerSlide ?? q.slide + 1;
 
-			const params = new URLSearchParams(location.search);
-			document.getElementById("code").textContent = params.get("code") || "imwithstupid";
+			// Host session. A stored token means no re-prompt on refresh; presenting the
+			// passphrase in the URL is equally sufficient (the battery-death path) and
+			// mints one. With neither, this page is not yours: go back to the door.
+			const HOST_PASSPHRASE = "imwithstupid";
+			const TOKEN_KEY = "hostToken";
+			(function gate() {
+				let token = null;
+				try {
+					token = localStorage.getItem(TOKEN_KEY);
+				} catch {}
+				if (token) return;
+				if (new URLSearchParams(location.search).get("code") === HOST_PASSPHRASE) {
+					try {
+						localStorage.setItem(TOKEN_KEY, "mock-" + Date.now());
+					} catch {}
+					return;
+				}
+				location.replace("index.html");
+			})();
 
 			// ------------------------------------------------------------------
 			// Helpers
@@ -300,33 +451,71 @@
 				toastTimer = setTimeout(() => (t.style.display = "none"), 2200);
 			}
 
-			// Latest non-superseded row per person for one question. (Fold rule.)
-			function liveRows(qid) {
+			// All live guesses per person for one question, in guess order.
+			function guessesOf(qid) {
 				const m = new Map();
-				for (const r of log) if (r.questionId === qid && !r.superseded) m.set(r.personId, r);
+				for (const r of log) {
+					if (r.questionId !== qid || r.superseded) continue;
+					if (!m.has(r.personId)) m.set(r.personId, []);
+					m.get(r.personId).push(r);
+				}
+				for (const rows of m.values()) rows.sort((a, b) => a.guessNo - b.guessNo);
 				return m;
 			}
-			// The review queue is everything not yet confirmed, closest first.
+			// Latest live guess per person — "has this person answered at all".
+			function liveRows(qid) {
+				const m = new Map();
+				for (const [pid, rows] of guessesOf(qid)) m.set(pid, rows[rows.length - 1]);
+				return m;
+			}
+			const rowById = (id) => log.find((r) => r.id === id);
+			// Per-question outcome for one person, folded over their guesses:
+			// any confirmed-correct guess wins; all-confirmed-incorrect is incorrect;
+			// anything unconfirmed is pending. (Fold rule.)
+			function outcome(qid, pid) {
+				const rows = guessesOf(qid).get(pid) ?? [];
+				if (!rows.length) return { state: null, confirmed: false, none: true, winner: null };
+				const q = pack.questions.find((x) => x.id === qid);
+				if (q && isList(q)) {
+					// a list pays for its BEST confirmed guess, not its earliest — a later,
+					// fuller list should count. A still-pending guess can only improve it.
+					const done = rows.filter((r) => r.verdict.confirmed);
+					if (!done.length) return { state: null, confirmed: false, winner: null };
+					const best = done.reduce((x, y) => ((y.verdict.count ?? 0) > (x.verdict.count ?? 0) ? y : x));
+					return { state: (best.verdict.count ?? 0) > 0 ? "correct" : "incorrect", confirmed: true, winner: best, count: best.verdict.count ?? 0 };
+				}
+				const winner = rows.find((r) => r.verdict.state === "correct" && r.verdict.confirmed);
+				if (winner) return { state: "correct", confirmed: true, winner };
+				const pending = rows.some((r) => !r.verdict.confirmed);
+				const anyCorrect = rows.some((r) => r.verdict.state === "correct");
+				const anyIncorrect = rows.some((r) => r.verdict.state === "incorrect");
+				return { state: anyCorrect ? "correct" : anyIncorrect ? "incorrect" : null, confirmed: !pending, winner: null };
+			}
+			// The review queue is every unconfirmed guess, closest first.
 			function pendingItems(qid) {
-				return [...liveRows(qid).values()]
-					.filter((r) => !r.verdict.confirmed)
+				return log
+					.filter((r) => r.questionId === qid && !r.superseded && !r.verdict.confirmed)
 					.sort((a, b) => (a.verdict.distance ?? 99) - (b.verdict.distance ?? 99));
 			}
 			function pendingTotal() {
 				return pack.questions.reduce((n, q) => n + pendingItems(q.id).length, 0);
 			}
 
-			// The leaderboard fold: confirmed-correct rows only, latest per person-question.
+			// The leaderboard fold: a question pays out if any of the person's guesses is confirmed correct.
 			function scores() {
 				const s = new Map(players.map((p) => [p.personId, 0]));
 				for (const q of pack.questions) {
-					for (const [pid, r] of liveRows(q.id)) {
-						if (r.verdict.state === "correct" && r.verdict.confirmed && s.has(pid)) s.set(pid, s.get(pid) + q.points);
+					for (const pid of guessesOf(q.id).keys()) {
+						const o = outcome(q.id, pid);
+						if (o.state === "correct" && o.confirmed && o.winner && s.has(pid))
+							s.set(pid, s.get(pid) + (isList(q) ? (q.pointsPer ?? 0) * (o.winner.verdict.count ?? 0) : pointsFor(q, o.winner.guessNo)));
 					}
 				}
 				return s;
 			}
-			// Ties take the average of the tied ranks (two tied for 1st → both 1.5).
+			// Two ways to rank a tie, a host setting (read at point of use like the rest).
+			//   sharedRank on  — tied players share the better rank, next rank skips: 1, 2, 2, 4
+			//   sharedRank off — tied players take the average of the ranks they cover: 1, 2.5, 2.5, 4
 			function standings() {
 				const s = scores();
 				const rows = players
@@ -336,7 +525,7 @@
 				while (i < rows.length) {
 					let j = i;
 					while (j + 1 < rows.length && rows[j + 1].score === rows[i].score) j++;
-					const rank = (i + 1 + (j + 1)) / 2;
+					const rank = settings.sharedRank ? i + 1 : (i + 1 + (j + 1)) / 2;
 					for (let k = i; k <= j; k++) rows[k].rank = rank;
 					i = j + 1;
 				}
@@ -352,15 +541,90 @@
 			// ------------------------------------------------------------------
 			function threshold(q) {
 				if (q.threshold === "exact") return 0;
-				if (q.threshold === "auto") return Math.floor(q.answers[0].length / 5);
+				if (q.threshold === "auto") return Math.floor((q.answers[0] ?? "").length / 3);
 				return Number(q.threshold);
 			}
+			// The elements a player submitted, in the order they wrote them.
+			const itemsOf = (r) => String(r.payload.text).split(",").map((t) => t.trim()).filter(Boolean);
+
+			// Which submitted elements landed, as one boolean per element. Normalised
+			// exact comparison only — the fuzzy matcher is the server's job (see
+			// CLAUDE.md), so this deliberately does not try to be it.
+			//
+			// The two order flags are independent, and each only bites on an axis that
+			// has more than one element:
+			//   orderX — within a row, column order counts (country then capital)
+			//   orderY — the rows themselves must come in grid order
+			function matchRow(gridRow, vals, ordered) {
+				const out = new Array(vals.length).fill(false);
+				if (ordered) {
+					for (let j = 0; j < Math.min(vals.length, gridRow.length); j++) if (gridRow[j].includes(vals[j])) out[j] = true;
+					return out;
+				}
+				const used = new Set();
+				vals.forEach((v, j) => {
+					const k = gridRow.findIndex((cell, idx) => !used.has(idx) && cell.includes(v));
+					if (k >= 0) { used.add(k); out[j] = true; }
+				});
+				return out;
+			}
+			function listMarks(q, items) {
+				const grid = gridRows(q).map((row) => row.map((c) => c.map(normName).filter(Boolean)));
+				const { rows, cols } = gridDims(q);
+				const given = items.map(normName);
+				const marks = new Array(items.length).fill(false);
+				const acrossOrdered = !!q.orderX && cols > 1;
+				const usedRow = new Set();
+				// the submission is read in the grid's own shape: cols elements per row
+				for (let start = 0, ci = 0; start < given.length; start += cols, ci++) {
+					const vals = given.slice(start, start + cols);
+					let gr = -1;
+					if (q.orderY && rows > 1) {
+						gr = ci < rows ? ci : -1; // rows must line up with the grid
+					} else {
+						let bestScore = 0; // otherwise take the unused row this chunk answers best
+						for (let r = 0; r < rows; r++) {
+							if (usedRow.has(r)) continue;
+							const n = matchRow(grid[r], vals, acrossOrdered).filter(Boolean).length;
+							if (n > bestScore) { bestScore = n; gr = r; }
+						}
+					}
+					if (gr < 0 || usedRow.has(gr)) continue;
+					usedRow.add(gr);
+					matchRow(grid[gr], vals, acrossOrdered).forEach((ok, j) => { if (ok) marks[start + j] = true; });
+				}
+				return marks;
+			}
+			// A grader can never be credited with more elements than the grid holds.
+			const markCount = (q, v) => Math.min(gridFilled(q), Array.isArray(v.marks) ? v.marks.filter(Boolean).length : (v.count ?? 0));
 			// Verdict has two axes: `state` is the judgment (correct | incorrect),
 			// `confirmed` is whether the host has signed off. Exact → correct+confirmed.
 			// Within fuzzy distance → correct, confirmed only if autoPassFuzzy is on.
 			// Outside it → incorrect, always pending first (a red outline until the
 			// host fills it in). Autograde off → same judgment, never auto-confirmed.
-			function grade(q, kind) {
+			function grade(q, kind, text) {
+				// A list is scored by how many grid elements it matched. Auto-confirm only
+				// a clean sweep; partial credit always gets a human look.
+				if (isList(q)) {
+					const outOf = gridFilled(q);
+					if (bday() || !outOf) return { state: null, confirmed: false, count: null, outOf, matched: null, distance: null, method: "manual", overridden: false };
+					const marks = listMarks(q, String(text).split(",").map((t) => t.trim()).filter(Boolean));
+					const count = Math.min(outOf, marks.filter(Boolean).length);
+					return {
+						state: count > 0 ? "correct" : "incorrect",
+						confirmed: q.autograde && count === outOf,
+						marks,
+						count,
+						outOf,
+						matched: null,
+						distance: null,
+						method: q.autograde ? "list" : "manual",
+						overridden: false,
+					};
+				}
+				// No accepted answers (birthday mode always) → nothing to judge against.
+				// state:null is "ungraded": grey outline, nothing pre-highlighted, straight to the queue.
+				if (bday() || !q.answers.length) return { state: null, confirmed: false, matched: null, distance: null, method: "manual", overridden: false };
 				const v = { state: "incorrect", confirmed: false, matched: null, distance: null, method: "none", overridden: false };
 				if (kind === "exact") Object.assign(v, { state: "correct", confirmed: true, matched: q.answers[0], distance: 0, method: "exact" });
 				else if (kind === "fuzzy") {
@@ -379,7 +643,25 @@
 				while (s[i] === s[i + 1]);
 				return s.slice(0, i) + s[i + 1] + s[i] + s.slice(i + 2);
 			}
+			const GUESSES = ["Canberra", "Sydney", "1989", "1991", "Michelangelo", "Raphael", "Titan", "Europa", "no idea", "pass", "the big one", "a wizard did it"];
+			// plausible-but-wrong list elements, so a bad list still looks like an attempt
+			const LIST_DECOYS = ["Spain", "Madrid", "Kyoto", "Brazil", "Ottawa", "Berlin", "Cairo", "Norway", "Vienna", "Ringo Star"];
 			function textFor(q, kind) {
+				if (isList(q)) {
+					const rowsArr = gridRows(q).map((row) => row.map((c) => c[0] ?? ""));
+					if (!rowsArr.flat().filter(Boolean).length) return GUESSES[Math.floor(Math.random() * GUESSES.length)];
+					const decoy = () => LIST_DECOYS[Math.floor(Math.random() * LIST_DECOYS.length)];
+					if (kind === "exact") return rowsArr.flat().filter(Boolean).join(", ");
+					if (kind === "wrong") return rowsArr.flat().filter(Boolean).map(decoy).join(", ");
+					// fuzzy: a deliberate mix, so the grader sees right and wrong elements
+					// side by side inside one submission (and inside one bracketed row).
+					return rowsArr
+						.flatMap((row, r) => row.map((v, c) => (r === 0 || (r + c) % 2 === 0 ? v : decoy())))
+						.filter(Boolean)
+						.join(", ");
+				}
+				// no answer key (birthday mode) → nothing to riff on, so just a plausible free-text guess
+				if (!q.answers.length) return GUESSES[Math.floor(Math.random() * GUESSES.length)];
 				if (kind === "exact") return q.answers[0];
 				if (kind === "fuzzy") return fuzz(q.answers[0]);
 				return DECOYS[Math.floor(Math.random() * DECOYS.length)];
@@ -391,19 +673,31 @@
 			function submit(pid, kind) {
 				const q = curQ();
 				if (!q) return toast("No open question");
-				// canSubmit = room.collecting || grants.has(personId)   (spec)
-				if (!(game.phase === "collecting" || grants.has(pid))) return toast("Server would reject: question closed, no grant");
-				for (const r of log) if (r.questionId === q.id && r.personId === pid && !r.superseded) r.superseded = true;
+				const mine = guessesOf(q.id).get(pid) ?? [];
+				let guessNo;
+				if (grants.has(pid)) {
+					// send-back: the latest guess is replaced, not added to
+					const last = mine[mine.length - 1];
+					if (last) last.superseded = true;
+					guessNo = last ? last.guessNo : 1;
+					grants.delete(pid);
+				} else if (game.phase === "collecting" && mine.length < allowedGuesses(q)) {
+					guessNo = mine.length + 1; // a further guess, within the question's allowance
+				} else {
+					return toast(game.phase === "collecting" ? `Server would reject: all ${allowedGuesses(q)} guesses used` : "Server would reject: question closed, no grant");
+				}
+				const text = textFor(q, kind);
 				log.push({
+					id: ++rowSeq,
 					questionId: q.id,
 					personId: pid,
+					guessNo,
 					deviceId: "dev-" + pid,
-					payload: { text: textFor(q, kind) },
+					payload: { text },
 					submittedAt: Date.now(),
-					verdict: grade(q, kind),
+					verdict: grade(q, kind, text),
 					superseded: false,
 				});
-				grants.delete(pid);
 				render();
 			}
 
@@ -412,25 +706,66 @@
 			// question is still open it is also the resubmission grant — the player
 			// gets their textbox back. Once closed, only the un-confirm applies.
 			function sendBack(qid, pid) {
-				const r = liveRows(qid).get(pid);
+				const r = liveRows(qid).get(pid); // the latest guess is the one that gets replaced
 				if (!r) return;
 				if (qid === curQ()?.id && game.phase === "collecting") grants.add(pid);
 				r.verdict.confirmed = false;
 				render();
 			}
 
+			// A list's judgment is per element: click one to say it counts. The count,
+			// and so the points, follow from which elements are green.
+			function toggleMark(rowId, i) {
+				const r = rowById(rowId);
+				if (!r) return;
+				const q = pack.questions.find((x) => x.id === r.questionId);
+				const v = r.verdict;
+				const marks = (Array.isArray(v.marks) ? v.marks.slice() : []).concat(new Array(itemsOf(r).length).fill(false)).slice(0, itemsOf(r).length);
+				marks[i] = !marks[i];
+				v.marks = marks;
+				v.count = markCount(q, v);
+				v.state = v.count > 0 ? "correct" : "incorrect";
+				v.overridden = true;
+				render();
+			}
+
+			// The submitted elements, grouped the way the grid is: one bracket per row
+			// when the grid has more than one column, so [country, capital] reads as a pair.
+			function listChips(q, r, interactive) {
+				const items = itemsOf(r);
+				const marks = r.verdict.marks ?? [];
+				const cols = gridDims(q).cols;
+				const hide = hideGuesses();
+				const chip = (t, i) =>
+					`<span class="el${marks[i] ? " on" : ""}${hide ? " masked" : ""}"${interactive ? ` data-mark="${r.id}:${i}" title="${hide ? "hidden while you hold the laptop" : `click to ${marks[i] ? "un-mark" : "mark"} this element`}"` : ""}>${hide ? DOTS : esc(t)}</span>`;
+				if (!items.length) return `<span class="muted">—</span>`;
+				if (cols <= 1) return items.map(chip).join(" ");
+				const groups = [];
+				for (let i = 0; i < items.length; i += cols) groups.push(`<span class="elrow">[${items.slice(i, i + cols).map((t, j) => chip(t, i + j)).join(", ")}]</span>`);
+				return groups.join(", ");
+			}
+			function confirmRow(rowId) {
+				const r = rowById(rowId);
+				if (!r) return;
+				const v = r.verdict;
+				if (v.state === null) v.state = (v.count ?? 0) > 0 ? "correct" : "incorrect";
+				v.confirmed = true;
+				render();
+			}
+
 			// ✓ / ✗: confirm the held judgment, or flip it and confirm. Any question,
 			// any time. Confirming what the grader already said is not an override;
 			// changing the judgment (or the matched candidate) is.
-			function setVerdict(qid, pid, state, matched) {
-				const r = liveRows(qid).get(pid);
+			function setVerdict(rowId, state, matched) {
+				const r = rowById(rowId); // verdicts are per guess, so the target is a row
 				if (!r) return;
 				const v = r.verdict;
 				const changed = state !== v.state || (state === "correct" && matched !== v.matched);
+				const hadJudgment = v.state !== null; // from "ungraded" it's a first call, not an override
 				v.state = state;
 				v.matched = state === "correct" ? matched : null;
 				v.confirmed = true;
-				if (changed) v.overridden = true;
+				if (changed && hadJudgment) v.overridden = true;
 				render();
 			}
 
@@ -472,6 +807,8 @@
 			// Rendering
 			// ------------------------------------------------------------------
 			function render() {
+				document.body.classList.toggle("bday", bday());
+				document.body.classList.toggle("handoff", game.handoff);
 				renderStatus();
 				renderTracker();
 				renderEvaluator();
@@ -486,16 +823,17 @@
 				const n = pack.questions.length;
 				const connected = players.filter((p) => p.connected).length;
 				let s;
-				if (game.phase === "lobby") s = `Lobby · ${connected} of ${players.length} players connected · ${n} questions loaded`;
+				if (game.phase === "lobby") s = `Lobby · ${connected} of ${players.length} players connected · ${n} questions loaded${bday() ? " · <b>Reilly Birthday Mode</b>" : ""}`;
 				else if (game.phase === "ended") s = `Game over — room frozen. Leaderboard still reachable; log archived to D1.`;
 				else {
 					const live = liveRows(q.id);
 					const pend = pendingItems(q.id).length;
-					const ok = [...live.values()].filter((r) => r.verdict.state === "correct" && r.verdict.confirmed).length;
+					const ok = eligible(q).filter((p) => { const o = outcome(q.id, p.personId); return o.state === "correct" && o.confirmed; }).length;
+					const who = bday() && q.author ? `${game.cur + 1} of ${n} · <b>${esc(q.author)}</b>` : `Q${game.cur + 1} of ${n}`;
 					s =
 						game.phase === "collecting"
-							? `Q${game.cur + 1} of ${n} · <b>collecting</b> · ${live.size}/${players.length} answered${pend ? ` · ${pend} to review` : ""}`
-							: `Q${game.cur + 1} of ${n} · <b>closed</b> · ${ok} correct${pend ? ` · ${pend} still to review` : ""}`;
+							? `${who} · <b>collecting</b> · ${live.size}/${eligible(q).length} answered${pend ? ` · ${pend} to review` : ""}`
+							: `${who} · <b>closed</b> · ${ok} correct${pend ? ` · ${pend} still to review` : ""}`;
 				}
 				$("#status").innerHTML = s;
 
@@ -503,10 +841,34 @@
 				nextBtn.textContent = game.phase === "lobby" ? "Start game ›" : "Next question ›";
 				nextBtn.disabled = game.phase === "collecting" || game.phase === "ended" || game.cur + 1 >= n;
 				const closeBtn = $("#closeBtn");
-				const missing = q ? players.filter((p) => !liveRows(q.id).has(p.personId)).length : 0;
+				const missing = q ? eligible(q).filter((p) => !liveRows(q.id).has(p.personId)).length : 0;
 				closeBtn.textContent = game.phase === "collecting" && missing ? `Close question (${missing} not answered → 0)` : "Close question";
 				closeBtn.disabled = game.phase !== "collecting";
+				$("#handoffClose").textContent = closeBtn.textContent;
+				$("#handoffClose").disabled = closeBtn.disabled;
+				// Hand-off's way forward. While the question is open it waits on Close;
+				// once closed it passes the laptop to the next author, or ends the chain.
+				const hn = $("#handoffNext");
+				const nxtQ = pack.questions[game.cur + 1];
+				const ungraded = q ? pendingItems(q.id).length : 0;
+				if (game.phase === "collecting") {
+					hn.textContent = "Close the question first";
+					hn.disabled = true;
+				} else if (nxtQ) {
+					hn.textContent = `Done — hand to ${nxtQ.author || "question " + (game.cur + 2)} ›${ungraded ? ` (${ungraded} still ungraded)` : ""}`;
+					hn.disabled = false;
+				} else {
+					hn.textContent = `Done — that was the last one${ungraded ? ` (${ungraded} still ungraded)` : ""}`;
+					hn.disabled = false;
+				}
 				for (const b of [$("#endBtn"), $("#endBtn2")]) b.textContent = game.phase === "ended" ? "Undo end game" : "End game";
+
+				// Hand-off lives in the strip too: in birthday mode it is the main verb,
+				// and it needs to be reachable from whichever tab the host is looking at.
+				const ht = $("#handoffTop");
+				const canHand = bday() && q && !game.handoff && !!q.author;
+				ht.style.display = canHand ? "" : "none";
+				if (canHand) ht.textContent = `Hand to ${q.author} ›`;
 			}
 
 			function renderTracker() {
@@ -519,14 +881,16 @@
 					if (i === game.cur) status = game.phase === "collecting" ? "<b>collecting</b>" : game.phase === "revealing" ? "closed" : game.phase;
 					else if (i < game.cur) status = "done";
 					const live = liveRows(q.id);
-					const ok = [...live.values()].filter((r) => r.verdict.state === "correct" && r.verdict.confirmed).length;
+					const ok = [...live.keys()].filter((pid) => { const o = outcome(q.id, pid); return o.state === "correct" && o.confirmed; }).length;
 					const pend = pendingItems(q.id).length;
 					const tally = i <= game.cur ? `<span class="muted">${live.size} in · ${ok} ✓${pend ? ` · ${pend} ?` : ""}</span>` : "";
 					const th = thumbFor(q.slide);
 					const thumb = th ? `<img class="thumb${th.standin ? " standin" : ""}" src="${th.src}" title="${th.standin ? "slide picture (stand-in — load thumbnails for a render)" : "slide " + q.slide}" />` : "";
 					const flags = q.flags?.length ? `<div class="flag" title="extractor wasn't sure — check settings">⚠ ${q.flags.join(", ")}</div>` : "";
 					const cat = q.category ? `<div class="muted">${esc(q.category)}</div>` : "";
-					tr.innerHTML = `<td>${i + 1}</td><td>${thumb}${q.slide}${q.answerSlide ? `→${q.answerSlide}` : ""}</td><td>${cat}${esc(q.prompt)}${flags}</td><td>${q.answers.map(esc).join(", ")}</td><td>${q.points}</td><td>${status} ${tally}</td><td><a href="#" data-edit="${i}">${openSettings === i ? "close" : "settings"}</a></td>`;
+					// Birthday mode: the row is the participant's name and nothing else about the question.
+					const what = bday() ? `<b>${esc(q.author || "—")}</b>` : `${cat}${esc(q.prompt)}${flags}`;
+					tr.innerHTML = `<td>${i + 1}</td><td>${thumb}${q.slide}${q.answerSlide ? `→${q.answerSlide}` : ""}</td><td>${what}</td><td class="nb">${q.answers.map(esc).join(", ")}</td><td>${ptsLabel(q)}</td><td>${status} ${tally}</td><td><a href="#" data-edit="${i}">${openSettings === i ? "close" : "settings"}</a></td>`;
 					tb.appendChild(tr);
 					if (openSettings === i) tb.appendChild(settingsRow(q, i));
 				});
@@ -538,42 +902,104 @@
 						renderTracker();
 					}),
 				);
+				$("#thQ").textContent = bday() ? "Participant" : "Question";
 				const q = curQ();
+				const whose = q && bday() && q.author ? `${q.author}'s question` : "question";
 				$("#deckHint").textContent = q
-					? `TV should be on slide ${q.slide} (question)${game.phase === "revealing" ? ` → ${answerSlide(q)} (answer)` : ""}. Advance the deck yourself; the app only tracks.`
-					: "Lobby: TV on the title slide.";
+					? `TV should be on slide ${q.slide} (${whose})${game.phase === "revealing" ? ` → ${answerSlide(q)} (answer)` : ""}. Advance the deck yourself; the app only tracks.`
+					: bday() ? "Lobby: TV on slide 1, the index of who's up when." : "";
 			}
 
-			// Per-question settings live inside the slide-tracker row (spec).
+			// Per-question settings live inside the slide-tracker row (spec). Every
+			// field here has a matching default in session settings, and which fields
+			// show depends on the question's kind.
 			function settingsRow(q, i) {
 				const tr = document.createElement("tr");
 				tr.className = "current";
+				const { rows, cols } = gridDims(q);
+				const kindPicker = `<label class="nb">Type <select data-k="kind">${Object.entries(KINDS).map(([k, label]) => `<option value="${k}" ${q.kind === k ? "selected" : ""}>${label}</option>`).join("")}</select></label>`;
+
+				// --- single-answer fields ---
+				const singleFields = isList(q) ? "" : `
+					<label class="nb">Accepted answers <input type="text" data-k="answers" value="${esc(q.answers.join(", "))}" /> <span class="muted">comma-separated; first is the display answer</span></label>
+					<label>Points by guess ${pointBoxes(resize(q.points, MAX_GUESSES), allowedGuesses(q), "pg")}</label>`;
+
+				// --- list-answer fields: points per element, the two order axes, the grid ---
+				const listFields = !isList(q) ? "" : `
+					<label>Points per element <input type="number" data-k="pointsPer" value="${q.pointsPer ?? 0}" min="0" /> <span class="muted">× ${gridFilled(q)} filled = ${listMax(q)} max</span></label>
+					<span class="orderpair">Order matters:
+						<label><input type="checkbox" data-k="orderX" ${q.orderX ? "checked" : ""} ${cols > 1 ? "" : "disabled"} /> across →${cols > 1 ? "" : ` <span class="muted">(one column)</span>`}</label>
+						<label><input type="checkbox" data-k="orderY" ${q.orderY ? "checked" : ""} ${rows > 1 ? "" : "disabled"} /> down ↓${rows > 1 ? "" : ` <span class="muted">(one row)</span>`}</label>
+					</span>
+					<div class="gridwrap nb">
+						<div class="muted">Answer grid — one cell per element; commas inside a cell are alternative wordings of that same element</div>
+						<table class="gridedit">
+							${gridRows(q)
+								.map(
+									(row, r) =>
+										`<tr>${row.map((cell, c) => `<td><input type="text" data-cell="${r},${c}" value="${esc(cell.join(", "))}" placeholder="element" /></td>`).join("")}<td><button class="mini" data-delrow="${r}" ${rows > 1 ? "" : "disabled"} title="remove this row">×</button></td></tr>`,
+								)
+								.join("")}
+							<tr>${gridRows(q)[0].map((_, c) => `<td><button class="mini" data-delcol="${c}" ${cols > 1 ? "" : "disabled"} title="remove this column">×</button></td>`).join("")}<td></td></tr>
+						</table>
+						<button class="mini" data-addrow="1">+ row</button> <button class="mini" data-addcol="1">+ column</button>
+					</div>`;
+
 				tr.innerHTML = `<td colspan="7"><div class="qsettings">
-					<label class="wide">Question <input type="text" data-k="prompt" value="${esc(q.prompt)}" /></label>
-					<label>Accepted answers <input type="text" data-k="answers" value="${esc(q.answers.join(", "))}" /> <span class="muted">comma-separated; first is the display answer</span></label>
-					<label>Points <input type="number" data-k="points" value="${q.points}" min="0" /></label>
+					<label class="wide nb">Question <input type="text" data-k="prompt" value="${esc(q.prompt)}" /></label>
+					${kindPicker}
+					<label>Guesses <select data-k="guesses">
+						<option value="1">1</option><option value="2">2</option><option value="3">3</option><option value="4">4</option><option value="5">5</option><option value="6">6</option>
+					</select> <span class="muted">per player; the host can still send one back on top</span></label>
 					<label>Deck slide <input type="number" data-k="slide" value="${q.slide}" min="1" /></label>
-					<label><input type="checkbox" data-k="autograde" ${q.autograde ? "checked" : ""} /> Autograde <span class="muted">(off = everything queues for you)</span></label>
-					<label>Second guess <select data-k="secondGuess">
-						<option value="grant">host grant only</option>
-						<option value="auto1">auto-allow one resubmit</option>
-						<option value="none">none</option>
-					</select></label>
-					<label>Fuzzy threshold <select data-k="threshold">
-						<option value="auto">auto — floor(len/5)</option>
+					<label class="nb"><input type="checkbox" data-k="autograde" ${q.autograde ? "checked" : ""} /> Autograde <span class="muted">(off = everything queues for you)</span></label>
+					<label class="nb">Fuzzy threshold <select data-k="threshold">
+						<option value="auto">auto — floor(len/3)</option>
 						<option value="exact">exact only</option>
 						<option value="1">1</option><option value="2">2</option><option value="3">3</option>
 					</select></label>
+					${singleFields}
+					${listFields}
 					<button class="mini" data-remove="${i}">Remove question</button>
 				</div></td>`;
-				tr.querySelector('[data-k="secondGuess"]').value = q.secondGuess;
+				tr.querySelector('[data-k="guesses"]').value = String(allowedGuesses(q));
 				tr.querySelector('[data-k="threshold"]').value = q.threshold;
+
+				// points-by-guess boxes (single answer)
+				tr.querySelectorAll("[data-pg]").forEach((el) =>
+					el.addEventListener("change", () => {
+						const sc = schedule(q);
+						sc[Number(el.dataset.pg)] = Math.max(0, Number(el.value) || 0);
+						q.points = sc;
+						render();
+					}),
+				);
+
+				// grid cells and the buttons that reshape the grid
+				tr.querySelectorAll("[data-cell]").forEach((el) =>
+					el.addEventListener("change", () => {
+						const [r, c] = el.dataset.cell.split(",").map(Number);
+						q.grid[r][c] = el.value.split(",").map((t) => t.trim()).filter(Boolean);
+						render();
+					}),
+				);
+				const addRow = tr.querySelector("[data-addrow]");
+				if (addRow) addRow.onclick = () => { q.grid.push(gridRows(q)[0].map(() => [])); render(); };
+				const addCol = tr.querySelector("[data-addcol]");
+				if (addCol) addCol.onclick = () => { q.grid.forEach((row) => row.push([])); render(); };
+				tr.querySelectorAll("[data-delrow]").forEach((b) => (b.onclick = () => { if (gridDims(q).rows > 1) { q.grid.splice(Number(b.dataset.delrow), 1); render(); } }));
+				tr.querySelectorAll("[data-delcol]").forEach((b) => (b.onclick = () => { if (gridDims(q).cols > 1) { q.grid.forEach((row) => row.splice(Number(b.dataset.delcol), 1)); render(); } }));
+
 				tr.querySelectorAll("[data-k]").forEach((el) =>
 					el.addEventListener("change", () => {
 						const k = el.dataset.k;
 						if (k === "answers") q.answers = el.value.split(",").map((s) => s.trim()).filter(Boolean);
-						else if (k === "points" || k === "slide") q[k] = Number(el.value) || 0;
-						else if (k === "autograde") q.autograde = el.checked;
+						else if (k === "kind") { q.kind = el.value; normalizeQ(q); } // picks up that kind's defaults
+						else if (k === "guesses") {
+							q.guesses = Number(el.value) || 1;
+							q.points = resize(q.points, q.guesses); // the schedule follows the guess count
+						} else if (k === "slide" || k === "pointsPer") q[k] = Math.max(0, Number(el.value) || 0);
+						else if (k === "autograde" || k === "orderX" || k === "orderY") q[k] = el.checked;
 						else q[k] = el.value;
 						render();
 					}),
@@ -591,7 +1017,7 @@
 				const sel = $("#evalQ");
 				sel.innerHTML = "";
 				pack.questions.forEach((q, i) => {
-					if (i <= game.cur) sel.add(new Option(`Q${i + 1}`, q.id));
+					if (i <= game.cur) sel.add(new Option(qLabel(q, i), q.id));
 				});
 				const q = pack.questions.find((x) => x.id === game.evalQ);
 				$("#evalEmpty").style.display = q ? "none" : "block";
@@ -602,33 +1028,44 @@
 				const isCur = q === curQ();
 				const open = isCur && game.phase === "collecting";
 				$("#evalMeta").textContent = open
-					? "open — answers still arriving"
+					? "open"
 					: isCur
-						? "closed — verdicts editable, send back still reopens for review"
-						: "previous question — verdicts editable, send back disabled";
-				$("#evalPrompt").innerHTML = `${esc(q.prompt)} <span class="muted">— ${q.answers.map(esc).join(", ")} · ${q.points} pts</span>`;
+						? "closed"
+						: "previous question";
+				if (hideGuesses()) $("#evalMeta").textContent += " · answers covered while you hold the laptop";
+				$("#evalPrompt").innerHTML = bday()
+					? `${esc(q.author || "This")}'s question<span class="answerline">${ptsLabel(q)} pts</span>`
+					: isList(q)
+						? `${esc(q.prompt)}<span class="answerline">list of ${gridFilled(q)} · ${ptsLabel(q)} pts</span>`
+						: `${esc(q.prompt)}<span class="answerline">${q.answers.map(esc).join(", ")} · ${ptsLabel(q)} pts</span>`;
+				// hand-off button: only in birthday mode, only for the live question, only while the host holds the laptop
+				const hb = $("#handoffBtn");
+				hb.style.display = bday() && isCur && !game.handoff && q.author ? "" : "none";
+				hb.textContent = `Hand to ${q.author} ›`;
+				hb.onclick = enterHandoff;
+				$("#handoffWho").textContent = q.author || "";
 				const fig = (n, label) => {
 					const t = thumbFor(n);
-					return t ? `<figure><img src="${t.src}" class="${t.standin ? "standin" : ""}" /><figcaption>slide ${n} · ${label}${t.standin ? " (slide picture)" : ""}</figcaption></figure>` : "";
+					return t ? `<figure><img src="${t.src}" class="${t.standin ? "standin" : ""}" /><figcaption>slide ${n}</figcaption></figure>` : "";
 				};
 				$("#evalThumbs").innerHTML = fig(q.slide, "question") + (q.answerSlide ? fig(q.answerSlide, "answer") : "");
 
 				// Stats strip: percentages are of players in the room, so "no answer"
 				// is visible as the gap. Correct counts confirmed-correct, same as the fold.
 				{
-					const rows = [...liveRows(q.id).values()];
-					const n = players.length;
+					const people = eligible(q).map((p) => outcome(q.id, p.personId)).filter((o) => !o.none);
+					const n = eligible(q).length;
 					const pct = (k) => (n ? Math.round((100 * k) / n) : 0);
-					const submitted = rows.length;
-					const correct = rows.filter((r) => r.verdict.state === "correct" && r.verdict.confirmed).length;
-					const incorrect = rows.filter((r) => r.verdict.state === "incorrect" && r.verdict.confirmed).length;
-					const pending = rows.filter((r) => !r.verdict.confirmed).length;
+					const submitted = people.length;
+					const correct = people.filter((o) => o.state === "correct" && o.confirmed).length;
+					const incorrect = people.filter((o) => o.state === "incorrect" && o.confirmed).length;
+					const pending = people.filter((o) => !o.confirmed).length;
 					const tile = (label, big, small = "") => `<div class="stat"><div class="stat-big">${big}</div><div class="stat-label">${label}${small ? ` <span class="muted">${small}</span>` : ""}</div></div>`;
 					$("#evalStats").innerHTML =
 						tile("submitted", `${pct(submitted)}%`, `${submitted} of ${n}`) +
 						tile("correct", `${pct(correct)}%`, `${correct} of ${n}`) +
 						tile("incorrect", `${pct(incorrect)}%`, `${incorrect} of ${n}`) +
-						tile("pending review", pending) +
+						tile("players pending", pending) +
 						tile("no answer", n - submitted);
 				}
 
@@ -643,80 +1080,152 @@
 					const d = document.createElement("div");
 					d.className = "qitem";
 					const v = r.verdict;
-					const why = (v.method === "manual" ? "autograde off" : `distance ${v.distance} · ${v.method}`) + ` → grader says <span class="v-${v.state === "correct" ? "ok" : "no"}">${v.state}</span>`;
-					d.innerHTML = `<div class="guess">${esc(r.payload.text)}</div>
-						<div class="muted"><span class="dot ${v.state === "correct" ? "ok" : "no"} outline"></span><b>${esc(name(r.personId))}</b> · ${why}</div>
+					const why =
+						v.state === null
+							? ""
+							: isList(q)
+								? `autograde marked <b>${v.count} of ${v.outOf}</b> — click an element to change it`
+								: (v.method === "manual" ? "autograde off" : `distance ${v.distance >= 6 ? "6+" : v.distance} · ${v.method}`) + ` grader says <span class="v-${v.state === "correct" ? "ok" : "no"}">${v.state}</span>`;
+					const dotCls = v.state === "correct" ? "ok" : v.state === "incorrect" ? "no" : "";
+					const headline = isList(q)
+						? listChips(q, r, true)
+						: hideGuesses()
+							? `<span class="masked">hidden — hand the laptop over to read it</span>`
+							: esc(r.payload.text);
+					d.innerHTML = `<div class="guess">${headline}</div>
+						<div class="muted"><span class="dot ${dotCls} outline"></span><b>${esc(name(r.personId))}</b> · guess ${r.guessNo} of ${allowedGuesses(q)}${why ? ` · ${why}` : ""}</div>
 						<div class="choices"></div>`;
 					const ch = d.querySelector(".choices");
-					// Correct means "matches the accepted answer(s)" — the matched candidate
-					// is recorded from the grader (or the display answer if it had none).
-					const b = document.createElement("button");
-					b.className = v.state === "correct" ? "best" : "";
-					b.textContent = "✓ Correct";
-					b.onclick = () => setVerdict(q.id, r.personId, "correct", v.matched ?? q.answers[0]);
-					ch.appendChild(b);
-					const x = document.createElement("button");
-					x.className = v.state === "incorrect" ? "best-no" : "";
-					x.textContent = "✗ Incorrect";
-					x.onclick = () => setVerdict(q.id, r.personId, "incorrect", null);
-					ch.appendChild(x);
+					if (isList(q)) {
+						// graded by clicking the elements above; this just signs it off
+						const ok = document.createElement("button");
+						ok.className = "best";
+						ok.textContent = `✓ Confirm ${v.count ?? 0} of ${gridFilled(q)} — ${(v.count ?? 0) * (q.pointsPer ?? 0)} pts`;
+						ok.onclick = () => confirmRow(r.id);
+						ch.appendChild(ok);
+					} else {
+						// Correct means "matches the accepted answer(s)" — the matched candidate
+						// is recorded from the grader (or the display answer if it had none).
+						const b = document.createElement("button");
+						b.className = v.state === "correct" ? "best" : "";
+						b.textContent = "✓ Correct";
+						b.onclick = () => setVerdict(r.id, "correct", v.matched ?? q.answers[0] ?? null);
+						ch.appendChild(b);
+						const x = document.createElement("button");
+						x.className = v.state === "incorrect" ? "best-no" : "";
+						x.textContent = "✗ Incorrect";
+						x.onclick = () => setVerdict(r.id, "incorrect", null);
+						ch.appendChild(x);
+					}
+					d.querySelectorAll("[data-mark]").forEach((el) =>
+						(el.onclick = () => {
+							const [rid, i] = el.dataset.mark.split(":").map(Number);
+							toggleMark(rid, i);
+						}),
+					);
 					queue.appendChild(d);
 				}
 
-				// Submission tracker: every player, live status.
+				// Submission tracker: every player, one column per allowed guess. Each
+				// guess carries its own ✓ ✗; the Outcome column is the fold over them.
+				const N = allowedGuesses(q);
+				$("#subHead").innerHTML = `<tr><th>Player</th>${Array.from({ length: N }, (_, k) => `<th>Guess ${k + 1}</th>`).join("")}<th>Send back</th><th>Outcome</th><th>Confirmed</th></tr>`;
 				const tb = $("#subBody");
 				tb.innerHTML = "";
-				const live = liveRows(q.id);
+				const byPerson = guessesOf(q.id);
 				const sorted = [...players].sort((a, b) => name(a.personId).localeCompare(name(b.personId)));
 				for (const p of sorted) {
-					const r = live.get(p.personId);
-					const history = log.filter((x) => x.questionId === q.id && x.personId === p.personId && x.superseded);
+					const mine = byPerson.get(p.personId) ?? [];
 					const tr = document.createElement("tr");
 					if (!p.connected) tr.className = "off";
-					const sentBack = open && grants.has(p.personId);
-					let verdict;
-					let confirmed = "";
-					if (sentBack) verdict = `<span class="dot back"></span><span class="v-pend">sent back</span> <span class="muted">— waiting for resubmit</span>`;
-					else if (r) {
-						const v = r.verdict;
-						const cls = v.state === "correct" ? "ok" : "no";
-						const extra = [v.state === "correct" && v.matched ? `= ${esc(v.matched)}` : "", v.distance != null ? `d${v.distance}` : "", v.overridden ? "overridden" : ""]
-							.filter(Boolean)
-							.join(" · ");
-						// outline = pending confirmation, filled = confirmed
-						verdict = `<span class="dot ${cls}${v.confirmed ? "" : " outline"}"></span><span class="v-${cls}">${v.state}</span> <span class="muted">${extra}</span>`;
-						confirmed = v.confirmed ? `<span class="muted">confirmed</span>` : `<span class="v-pend">pending</span>`;
-					} else if (open) verdict = `<span class="dot"></span><span class="muted">waiting…</span>`;
-					else verdict = `<span class="dot"></span><span class="muted">no answer · 0</span>`;
-
-					const answer = (r ? `<span class="pill">${esc(r.payload.text)}</span>` : `<span class="muted">—</span>`) +
-						history.map((h) => `<div class="superseded">${esc(h.payload.text)}</div>`).join("");
-
-					// Actions sit before the verdict so the eye lands on the buttons, then
-					// reads the outcome. The held state is highlighted on its own button.
-					// The held judgment is highlighted on its button; dashed while pending, solid once confirmed.
-					let actions = "";
-					if (r) {
-						const v = r.verdict;
-						const pend = v.confirmed ? "" : " unconfirmed";
-						actions += `<button class="mini ${v.state === "correct" ? "held-ok" + pend : ""}" data-v="correct" data-p="${p.personId}" title="${v.state === "correct" && !v.confirmed ? "confirm correct" : "mark correct"}">✓</button>`;
-						actions += `<button class="mini ${v.state === "incorrect" ? "held-no" + pend : ""}" data-v="incorrect" data-p="${p.personId}" title="${v.state === "incorrect" && !v.confirmed ? "confirm incorrect" : "mark incorrect"}">✗</button>`;
-						// Send back is a current-question power. Once the game has moved on,
-						// verdicts stay editable but the answer can't be reopened.
-						actions += isCur
-							? `<button class="mini ${sentBack ? "held-pend" : ""}" data-sendback="${p.personId}" title="${open ? "send back for resubmission + review" : "back to review"}">↩</button>`
-							: `<button class="mini" disabled title="send back only on the current question">↩</button>`;
+					if (isAuthor(q, p.personId)) {
+						tr.innerHTML = `<td>${esc(name(p.personId))}</td><td colspan="${N + 1}"><span class="muted">—</span></td><td><span class="dot"></span><span class="muted">author — grading this one, sits it out</span></td><td></td>`;
+						tb.appendChild(tr);
+						continue;
 					}
-					tr.innerHTML = `<td>${esc(name(p.personId))}${p.connected ? "" : ' <span class="muted">(offline)</span>'}</td><td>${answer}</td><td>${actions}</td><td>${verdict}</td><td>${confirmed}</td>`;
+					const sentBack = open && grants.has(p.personId);
+					const o = outcome(q.id, p.personId);
+
+					// one cell per guess slot
+					let cells = "";
+					for (let k = 1; k <= N; k++) {
+						const r = mine.find((x) => x.guessNo === k);
+						const replaced = log.filter((x) => x.questionId === q.id && x.personId === p.personId && x.superseded && x.guessNo === k);
+						if (!r) {
+							const expecting = k === mine.length + 1 && (open || sentBack);
+							cells += `<td class="gcell">${expecting ? `<span class="muted">waiting…</span>` : `<span class="muted">—</span>`}</td>`;
+							continue;
+						}
+						const v = r.verdict;
+						const cls = v.state === "correct" ? "ok" : v.state === "incorrect" ? "no" : "";
+						const pend = v.confirmed ? "" : " unconfirmed";
+						const isLatest = r === mine[mine.length - 1];
+						const dot = sentBack && isLatest ? `<span class="dot back" title="sent back — waiting for a replacement"></span>` : `<span class="dot ${cls}${v.confirmed ? "" : " outline"}"></span>`;
+						// A list shows what it scored, not a control: the marking is done by
+						// clicking elements in the review queue.
+						const controls = isList(q)
+							? `<span class="muted">${v.count ?? 0} of ${gridFilled(q)} · <b>${(v.count ?? 0) * (q.pointsPer ?? 0)} pts</b></span> <button class="mini ${v.confirmed ? "held-ok" : ""}" data-confirm="${r.id}" title="confirm this total">✓</button>`
+							: `<button class="mini ${v.state === "correct" ? "held-ok" + pend : ""}" data-row="${r.id}" data-v="correct" title="${v.state === "correct" && !v.confirmed ? "confirm correct" : "mark correct"}">✓</button><button class="mini ${v.state === "incorrect" ? "held-no" + pend : ""}" data-row="${r.id}" data-v="incorrect" title="${v.state === "incorrect" && !v.confirmed ? "confirm incorrect" : "mark incorrect"}">✗</button>`;
+						cells += `<td class="gcell">${isList(q) ? listChips(q, r, false) : `<span class="pill${hideGuesses() ? " masked" : ""}">${hideGuesses() ? DOTS : esc(r.payload.text)}</span>`}
+							<div class="gline">${dot}${controls}${v.overridden ? ` <span class="muted">overridden</span>` : ""}</div>
+							${replaced.map((h) => `<div class="superseded${hideGuesses() ? " masked" : ""}">${hideGuesses() ? DOTS : esc(h.payload.text)}</div>`).join("")}</td>`;
+					}
+
+					// send back applies to the latest guess, current question only
+					const sb = !mine.length ? "" : isCur
+						? `<button class="mini ${sentBack ? "held-pend" : ""}" data-sendback="${p.personId}" title="${open ? "send the latest guess back: player may replace it, and it returns to review" : "latest guess back to review"}">↩</button>`
+						: `<button class="mini" disabled title="send back only on the current question">↩</button>`;
+
+					// outcome: the fold over this player's guesses
+					let out, confirmed = "";
+					if (o.none) out = open ? `<span class="dot"></span><span class="muted">waiting…</span>` : `<span class="dot"></span><span class="muted">no answer · 0</span>`;
+					else {
+						const cls = o.state === "correct" ? "ok" : o.state === "incorrect" ? "no" : "";
+						const which = !o.winner
+							? ""
+							: isList(q)
+								? ` <span class="muted">(${o.count} of ${gridFilled(q)} · ${(o.count ?? 0) * (q.pointsPer ?? 0)} pts)</span>`
+								: ` <span class="muted">(guess ${o.winner.guessNo} · ${pointsFor(q, o.winner.guessNo)} pts)</span>`;
+						out = `<span class="dot ${cls}${o.confirmed ? "" : " outline"}"></span><span class="${cls ? "v-" + cls : "muted"}">${o.state ?? "ungraded"}</span>${which}`;
+						confirmed = o.confirmed ? `<span class="muted">confirmed</span>` : `<span class="v-pend">pending</span>`;
+					}
+					tr.innerHTML = `<td>${esc(name(p.personId))}${p.connected ? "" : ' <span class="muted">(offline)</span>'}</td>${cells}<td>${sb}</td><td>${out}</td><td>${confirmed}</td>`;
 					tb.appendChild(tr);
 				}
 				tb.querySelectorAll("[data-sendback]").forEach((b) => (b.onclick = () => sendBack(q.id, b.dataset.sendback)));
-				tb.querySelectorAll("[data-v]").forEach(
-					(b) => (b.onclick = () => setVerdict(q.id, b.dataset.p, b.dataset.v, b.dataset.v === "correct" ? (live.get(b.dataset.p)?.verdict.matched ?? q.answers[0]) : null)),
+				tb.querySelectorAll("[data-row]").forEach((b) => (b.onclick = () => setVerdict(Number(b.dataset.row), b.dataset.v, b.dataset.v === "correct" ? (rowById(Number(b.dataset.row))?.verdict.matched ?? q.answers[0] ?? null) : null)));
+				tb.querySelectorAll("[data-confirm]").forEach((b) => (b.onclick = () => confirmRow(Number(b.dataset.confirm))));
+			}
+
+			function renderAuthors() {
+				const tb = $("#authorBody");
+				tb.innerHTML = "";
+				if (!bday()) return;
+				const sorted = [...players].sort((a, b) => name(a.personId).localeCompare(name(b.personId)));
+				pack.questions.forEach((q, i) => {
+					const current = q.authorId === "none" ? null : (q.authorId ?? guessedAuthor(q));
+					const opts = [`<option value="" ${current ? "" : "selected"}>— nobody —</option>`]
+						.concat(sorted.map((p) => `<option value="${p.personId}" ${p.personId === current ? "selected" : ""}>${esc(name(p.personId))}${p.connected ? "" : " (offline)"}</option>`))
+						.join("");
+					const tr = document.createElement("tr");
+					if (i === game.cur) tr.className = "current";
+					tr.innerHTML = `<td>${i + 1}</td><td>${esc(q.author || "—")}</td><td><select class="short" data-author="${q.id}">${opts}</select>${!q.authorId && current ? ` <span class="muted">matched by name</span>` : ""}</td>`;
+					tb.appendChild(tr);
+				});
+				tb.querySelectorAll("[data-author]").forEach((el) =>
+					el.addEventListener("change", () => {
+						const q = pack.questions.find((x) => x.id === el.dataset.author);
+						q.authorId = el.value || "none"; // an explicit choice, either way
+						render();
+					}),
 				);
 			}
 
 			function renderPlayers() {
+				renderAuthors();
+				$("#tieNote").innerHTML = settings.sharedRank
+					? "Tied players share the better rank (1 · 2 · 2 · 4); change it in session settings. Rename / merge / delete / kick are the host identity panel — post-MVP, shown disabled."
+					: "Tied players take the average of the tied ranks (1 · 2.5 · 2.5 · 4); change it in session settings. Rename / merge / delete / kick are the host identity panel — post-MVP, shown disabled.";
 				const tb = $("#roomBody");
 				tb.innerHTML = "";
 				document.querySelectorAll(".scorecol").forEach((el) => (el.style.display = settings.showScores ? "" : "none"));
@@ -765,9 +1274,54 @@
 				$("#autoPassFuzzy").checked = settings.autoPassFuzzy;
 				$("#showVerdictsLive").checked = settings.showVerdictsLive;
 				$("#showScores").checked = settings.showScores;
+				$("#showPointsOnPhones").checked = settings.showPointsOnPhones;
+				$("#sharedRank").checked = settings.sharedRank;
+				$("#rankHint").textContent = settings.sharedRank ? "1 · 2 · 2 · 4" : "1 · 2.5 · 2.5 · 4";
+				$("#birthdayMode").checked = settings.birthdayMode;
+				$("#defaultGuesses").value = String(settings.defaultGuesses);
+				$("#defaultAutograde").checked = settings.defaultAutograde;
+				$("#defaultThreshold").value = settings.defaultThreshold;
+				$("#defaultKind").value = settings.defaultKind;
+				$("#defaultPointsPer").value = settings.defaultPointsPer;
+				$("#defaultOrderX").checked = settings.defaultOrderX;
+				$("#defaultOrderY").checked = settings.defaultOrderY;
+				const box = $("#defaultSchedule");
+				box.innerHTML = pointBoxes(resize(settings.defaultSchedule, MAX_GUESSES), settings.defaultGuesses, "dg");
+				box.querySelectorAll("[data-dg]").forEach((el) =>
+					el.addEventListener("change", () => {
+						settings.defaultSchedule[Number(el.dataset.dg)] = Math.max(0, Number(el.value) || 0);
+						render();
+					}),
+				);
 				// Real deployment: https://<worker>.workers.dev/?view=leaderboard. The mock opens a sibling page.
-				$("#boardUrl").textContent = new URL("leaderboard.html", location.href).href.replace(/^file:\/\//, "") + "   (prod: /?view=leaderboard)";
+				$("#boardUrl").textContent = new URL("leaderboard.html", location.href).href.replace(/^file:\/\//, "");
 			}
+
+			// Hand-off: pass the laptop to the author. Hides the strip, the tabs and
+			// the question picker, so the only thing reachable is the live question.
+			function enterHandoff() {
+				if (!curQ()) return;
+				game.handoff = true;
+				game.evalQ = curQ().id;
+				showTab("evaluator");
+				render();
+			}
+			function exitHandoff() {
+				game.handoff = false;
+				render();
+			}
+			$("#handoffReturn").onclick = exitHandoff;
+			$("#handoffClose").onclick = closeQ;
+			$("#handoffNext").onclick = () => {
+				if (game.phase === "collecting") return;
+				if (game.cur + 1 < pack.questions.length) {
+					next();
+					enterHandoff(); // the laptop is now with the next author
+				} else {
+					exitHandoff();
+					toast("All questions done — End game when ready");
+				}
+			};
 
 			// Hand the torn-out leaderboard tab its data. In the real app that tab is
 			// its own socket client; in the mock, localStorage + the storage event
@@ -782,13 +1336,30 @@
 			// ------------------------------------------------------------------
 			// Wiring
 			// ------------------------------------------------------------------
+			$("#signOut").onclick = () => {
+				try {
+					localStorage.removeItem(TOKEN_KEY);
+				} catch {}
+			};
+			$("#handoffTop").onclick = enterHandoff;
 			$("#nextBtn").onclick = next;
 			$("#closeBtn").onclick = closeQ;
 			$("#endBtn").onclick = endGame;
 			$("#endBtn2").onclick = endGame;
 			$("#evalQ").onchange = (e) => ((game.evalQ = e.target.value), render());
 			$("#tagFilter").onchange = renderPlayers;
-			for (const k of ["autoPassFuzzy", "showVerdictsLive", "showScores"]) {
+			$("#defaultKind").onchange = (e) => ((settings.defaultKind = e.target.value), render());
+			$("#defaultPointsPer").onchange = (e) => ((settings.defaultPointsPer = Math.max(0, Number(e.target.value) || 0)), render());
+			$("#defaultOrderX").onchange = (e) => ((settings.defaultOrderX = e.target.checked), render());
+			$("#defaultOrderY").onchange = (e) => ((settings.defaultOrderY = e.target.checked), render());
+			$("#defaultAutograde").onchange = (e) => ((settings.defaultAutograde = e.target.checked), render());
+			$("#defaultThreshold").onchange = (e) => ((settings.defaultThreshold = e.target.value), render());
+			$("#defaultGuesses").onchange = (e) => {
+				settings.defaultGuesses = Number(e.target.value);
+				settings.defaultSchedule = resize(settings.defaultSchedule, settings.defaultGuesses); // boxes follow the picker
+				render();
+			};
+			for (const k of ["autoPassFuzzy", "showVerdictsLive", "showScores", "showPointsOnPhones", "sharedRank", "birthdayMode"]) {
 				$("#" + k).onchange = (e) => ((settings[k] = e.target.checked), render());
 			}
 
@@ -801,19 +1372,24 @@
 					if (!Array.isArray(json.questions)) throw new Error("no questions[]");
 					if (game.phase !== "lobby") throw new Error("load packs in the lobby");
 					pack.title = json.title ?? f.name;
+					if (json.mode === "birthday") settings.birthdayMode = true; // the pack declares the mode
+					pack.mode = json.mode ?? null;
 					pack.questions = json.questions.map((q, i) => ({
 						id: q.id ?? `q${i + 1}`,
+						author: q.author ?? "",
+						authorId: q.authorId ?? null,
 						slide: q.slide ?? i * 2 + 2,
 						answerSlide: q.answerSlide ?? null,
 						prompt: q.prompt ?? "",
 						category: q.category ?? "",
 						flags: q.flags ?? [],
 						answers: Array.isArray(q.answers) ? q.answers : [String(q.answers ?? "")],
-						points: q.points ?? 10,
-						autograde: q.autograde ?? true,
-						secondGuess: q.secondGuess ?? "grant",
-						threshold: q.threshold ?? "auto",
+						points: q.points ?? settings.defaultSchedule,
+						guesses: q.guesses ?? settings.defaultGuesses,
+						autograde: q.autograde,
+						threshold: q.threshold,
 					}));
+					pack.questions.forEach(normalizeQ);
 					openSettings = null;
 					toast(`Loaded ${pack.questions.length} questions from ${f.name}`);
 					render();
@@ -830,7 +1406,7 @@
 			};
 			$("#addQ").onclick = () => {
 				const n = pack.questions.length + 1;
-				pack.questions.push({ id: "q" + Date.now(), slide: n * 2, prompt: "New question", answers: ["answer"], points: 10, autograde: true, secondGuess: "grant", threshold: "auto" });
+				pack.questions.push(normalizeQ({ id: "q" + Date.now(), slide: n * 2, prompt: "New question", answers: ["answer"], flags: [] }));
 				openSettings = pack.questions.length - 1;
 				render();
 			};
@@ -856,8 +1432,27 @@
 			const answerBox = (shapes) => shapes.find((t) => ANSWER_RE.test(t))?.replace(ANSWER_RE, "").trim() ?? null;
 			const looksLikeQuestion = (s) => s.shapes.some((t) => t.includes("?") || /point/i.test(t));
 
-			async function readDeck(file) {
-				const zip = await JSZip.loadAsync(file);
+			// Slide 1 of a collated birthday deck carries a marker and the order. If
+			// it's there we take the order from it and never touch the other slides'
+			// text or pictures — the host is playing and must not see them.
+			const BDAY_MARKER = "Reilly Birthday Mode";
+			function parseBirthdayIndex(slides) {
+				const first = slides[0];
+				if (!first) return null;
+				const foot = first.shapes.find((t) => t.includes(BDAY_MARKER));
+				if (!foot) return null;
+				const qs = [];
+				for (const seg of foot.split(" · ")) {
+					// "Alice 2–3", or just "Frank 4" for a one-slide deck with no answer slide
+					const m = seg.trim().match(/^(.+?)\s+(\d+)(?:\s*[–—-]\s*(\d+))?$/);
+					if (!m) continue;
+					qs.push(normalizeQ({ id: `q${qs.length + 1}`, author: m[1].trim(), slide: Number(m[2]), answerSlide: m[3] ? Number(m[3]) : null, prompt: "", category: "", answers: [], autograde: false, flags: [] }));
+				}
+				return qs.length ? qs : null;
+			}
+
+			async function readDeck(file, wantPics = true) {
+				const zip = file instanceof JSZip ? file : await JSZip.loadAsync(file);
 				const RNS = "http://schemas.openxmlformats.org/officeDocument/2006/relationships";
 				const xml = async (path) => new DOMParser().parseFromString(await zip.file(path).async("string"), "application/xml");
 				const relsOf = async (path) => Object.fromEntries([...(await xml(path)).getElementsByTagName("Relationship")].map((r) => [r.getAttribute("Id"), r.getAttribute("Target")]));
@@ -875,7 +1470,7 @@
 					}
 					const pics = doc.getElementsByTagNameNS("*", "pic");
 					let pic = null;
-					if (pics.length) {
+					if (wantPics && pics.length) {
 						// first embedded picture → stand-in preview until real thumbnails are loaded
 						const embed = pics[0].getElementsByTagNameNS("*", "blip")[0]?.getAttributeNS(RNS, "embed");
 						const srels = await relsOf(path.replace("slides/", "slides/_rels/") + ".rels");
@@ -929,7 +1524,7 @@
 					if (s.pics >= 3 || /^picture id/i.test(qText)) flags.push("picture-id");
 					const pts = [...(qText + " " + cat).matchAll(POINTS_RE)].map((m) => Number(m[1]));
 					if (pts.length > 1) flags.push("multi-part");
-					out.push({ id: `q${out.length + 1}`, slide: s.slide, answerSlide: aSlide, prompt: qText, category: cat, answers, points: pts.length === 1 ? pts[0] : 10, autograde: true, secondGuess: "grant", threshold: "auto", flags });
+					out.push(normalizeQ({ id: `q${out.length + 1}`, slide: s.slide, answerSlide: aSlide, prompt: qText, category: cat, answers, points: pts.length === 1 ? pts[0] : undefined, flags }));
 					i += step;
 				}
 				return out;
@@ -941,7 +1536,30 @@
 				try {
 					if (game.phase !== "lobby") throw new Error("load decks in the lobby");
 					toast("Reading deck…");
-					const slides = await readDeck(f);
+					const zip = await JSZip.loadAsync(f);
+					const textOnly = await readDeck(zip, false);
+					const bq = parseBirthdayIndex(textOnly);
+					if (bq) {
+						// Birthday deck: keep nothing but the index. No pictures, no slide
+						// text, no mapper — the questions stay on the TV where they belong.
+						for (const u of deck.pics.values()) URL.revokeObjectURL(u);
+						deck.pics = new Map();
+						deck.slides = [];
+						deck.map = [];
+						deck.name = f.name;
+						$("#mapBtn").disabled = true;
+						settings.birthdayMode = true;
+						pack.mode = "birthday";
+						pack.title = f.name.replace(/\.pptx$/i, "");
+						pack.questions = bq;
+						openSettings = null;
+						$("#deckNote").textContent = `${f.name}: Reilly Birthday Mode, ${bq.length} participants in the order on slide 1. Question and answer text was not read.`;
+						toast(`Birthday deck: ${bq.length} participants`);
+						render();
+						e.target.value = "";
+						return;
+					}
+					const slides = await readDeck(zip, true);
 					const qs = buildQuestions(slides);
 					if (!qs.length) throw new Error("no question slides recognised");
 					for (const u of deck.pics.values()) URL.revokeObjectURL(u);
@@ -955,10 +1573,10 @@
 					pack.questions = qs;
 					openSettings = null;
 					const flagged = qs.filter((q) => q.flags.length).length;
-					$("#deckNote").textContent = `${f.name}: ${slides.length} slides → ${qs.length} questions${flagged ? `, ${flagged} flagged ⚠` : ""}. Load thumbnails to replace the slide pictures with renders.`;
+					$("#deckNote").textContent = `${f.name}: ${slides.length} slides → ${qs.length} questions${flagged ? `, ${flagged} flagged ⚠` : ""}.`;
 					toast(`${qs.length} questions from ${slides.length} slides`);
 					render();
-					openMapper(`Auto-detected ${qs.length} questions${flagged ? `, ${flagged} flagged` : ""} — check the roles, then apply.`);
+					openMapper("");
 				} catch (err) {
 					toast("Couldn't read deck: " + err.message);
 				}
@@ -1073,16 +1691,17 @@
 						prompt: m.prompt,
 						category: p?.category ?? "",
 						answers,
-						points: p?.points ?? 10,
-						autograde: p?.autograde ?? true,
-						secondGuess: p?.secondGuess ?? "grant",
-						threshold: p?.threshold ?? "auto",
+						points: p?.points ?? settings.defaultSchedule,
+						guesses: p?.guesses ?? settings.defaultGuesses,
+						autograde: p?.autograde ?? settings.defaultAutograde,
+						threshold: p?.threshold ?? settings.defaultThreshold,
 						flags: answers.length ? [] : ["no-answer"],
 					};
 				});
+				pack.questions.forEach(normalizeQ);
 				openSettings = null;
 				closeMapper();
-				$("#deckNote").textContent = `${deck.name}: ${deck.slides.length} slides → ${pack.questions.length} questions (mapped by hand).`;
+				$("#deckNote").textContent = `${deck.name}: ${deck.slides.length} slides → ${pack.questions.length} questions.`;
 				toast(`${pack.questions.length} questions mapped`);
 				render();
 			}
@@ -1126,8 +1745,8 @@
 			function pool() {
 				const q = curQ();
 				if (!q || game.phase === "ended") return [];
-				const live = liveRows(q.id);
-				return players.filter((p) => p.connected && (grants.has(p.personId) || (game.phase === "collecting" && !live.has(p.personId))));
+				const by = guessesOf(q.id);
+				return eligible(q).filter((p) => p.connected && (grants.has(p.personId) || (game.phase === "collecting" && (by.get(p.personId)?.length ?? 0) < allowedGuesses(q))));
 			}
 			function pickAnswerer() {
 				const c = pool();

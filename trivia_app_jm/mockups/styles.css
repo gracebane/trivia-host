@@ -124,6 +124,23 @@ a.plain {
 	height: 100%;
 }
 
+/* the one thing a guest is meant to tap */
+.btn.big {
+	font-size: 16px;
+	padding: 10px 26px;
+}
+
+/* the host entrance: under a rule, muted, deliberately not a matching button */
+.hostdoor {
+	margin-top: 28px;
+	padding-top: 12px;
+	border-top: 1px solid #eee;
+}
+
+.hostdoor input[type="password"] {
+	min-width: 160px;
+}
+
 /* live players marked in the dropdown; kept subtle */
 .live-note {
 	color: #767676;
@@ -254,6 +271,79 @@ body.player {
 	background: #fff8ec;
 	border-radius: 4px;
 	padding: 8px 10px;
+}
+
+/* ---- player: guesses and the list grid ---- */
+/* one line per guess sent */
+.guesslist {
+	width: 100%;
+	text-align: left;
+}
+
+.guessrow {
+	display: flex;
+	align-items: baseline;
+	gap: 8px;
+	padding: 6px 0;
+	border-bottom: 1px solid #eee;
+	font-size: 14px;
+}
+
+.guessrow .ord {
+	color: #767676;
+	font-size: 12px;
+	white-space: nowrap;
+	min-width: 84px;
+}
+
+.guessrow .gtext {
+	flex: 1;
+	overflow-wrap: anywhere;
+}
+
+.guessrow .gmark {
+	font-size: 16px;
+	white-space: nowrap;
+}
+
+/* the list-answer grid: one box per element, the shape of the host's grid */
+.gridin {
+	display: grid;
+	gap: 6px;
+	width: 100%;
+}
+
+.gridin input {
+	min-width: 0;
+	width: 100%;
+	font-size: 16px; /* 16px avoids iOS zoom-on-focus */
+	padding: 8px;
+}
+
+/* what the question paid */
+.earned {
+	font-size: 26px;
+	margin: 6px 0 2px;
+}
+
+/* the two doors on the join screen; the chosen one is filled in */
+.choice {
+	display: flex;
+	gap: 8px;
+	width: 100%;
+}
+
+.choice button {
+	flex: 1;
+	margin: 0;
+	padding: 10px 6px;
+	font-size: 14px;
+}
+
+.choice button.on {
+	border-color: #000;
+	background: #000;
+	color: #fff;
 }
 
 /* inline "new player" name entry (replaces the old prompt) */
@@ -536,6 +626,257 @@ tr.off {
 	margin-top: 2px;
 }
 
+/* a guess the host isn't allowed to read yet */
+.masked {
+	color: #999;
+	letter-spacing: 2px;
+	background: #f2f2f2;
+	border-color: #e0e0e0;
+	font-weight: normal;
+	text-decoration: none;
+}
+
+.guess .masked {
+	font-size: 15px;
+	letter-spacing: 0;
+	font-style: italic;
+	padding: 2px 8px;
+	border: 1px solid #e0e0e0;
+	border-radius: 3px;
+	display: inline-block;
+}
+
+/* ---- Reilly Birthday Mode ---- */
+/* only exists in the mode */
+body:not(.bday) .bday-only {
+	display: none;
+}
+
+/* anything that would show question or answer content is .nb: hidden in the mode */
+body.bday .nb {
+	display: none !important;
+}
+
+/* hand-off: the laptop is with the author; only their question is reachable */
+body.handoff .hostbar,
+body.handoff .tabs,
+body.handoff #tab-evaluator .toolbar {
+	display: none;
+}
+
+#handoffBar {
+	display: none;
+	align-items: center;
+	gap: 10px;
+	flex-wrap: wrap;
+	border: 1px solid #e0a100;
+	background: #fff8ec;
+	padding: 8px 12px;
+	margin: 12px 0 14px;
+}
+
+body.handoff #handoffBar {
+	display: flex;
+}
+
+/* ---------------------------------------------------------------
+   Hand-off runs dark. It only ever happens in Reilly Birthday Mode,
+   and the change of colour is the signal that the laptop is not
+   yours any more — readable from across a room.
+   --------------------------------------------------------------- */
+body.bday.handoff {
+	background: #1c1c1e;
+	color: #e8e8e8;
+}
+
+body.bday.handoff .muted,
+body.bday.handoff .note,
+body.bday.handoff .thumbs figcaption {
+	color: #9a9a9a;
+}
+
+body.bday.handoff h2,
+body.bday.handoff h3 {
+	color: #c8c8c8;
+	border-color: #3a3a3c;
+}
+
+body.bday.handoff #handoffBar {
+	background: #3a2f14;
+	border-color: #7a6320;
+	color: #f0d9a0;
+}
+
+body.bday.handoff table.grid th {
+	color: #9a9a9a;
+	border-bottom-color: #4a4a4c;
+}
+
+body.bday.handoff table.grid td {
+	border-bottom-color: #2f2f31;
+}
+
+body.bday.handoff tr.off {
+	color: #6a6a6c;
+}
+
+body.bday.handoff .stats,
+body.bday.handoff .stat {
+	border-color: #3a3a3c;
+}
+
+body.bday.handoff .stat-label {
+	color: #c8c8c8;
+}
+
+body.bday.handoff .qitem {
+	border-color: #3a3a3c;
+	background: #232325;
+}
+
+body.bday.handoff .pill,
+body.bday.handoff .el {
+	border-color: #4a4a4c;
+	background: #2c2c2e;
+	color: #e8e8e8;
+}
+
+body.bday.handoff .el.on {
+	border-color: #4e9b57;
+	background: #1e3a24;
+	color: #8fd39a;
+}
+
+body.bday.handoff .masked {
+	background: #2c2c2e;
+	border-color: #3a3a3c;
+	color: #7a7a7c;
+}
+
+body.bday.handoff .superseded {
+	color: #6a6a6c;
+}
+
+body.bday.handoff button,
+body.bday.handoff .btn {
+	background: #3a3a3c;
+	border-color: #55555a;
+	color: #e8e8e8;
+}
+
+body.bday.handoff button:hover,
+body.bday.handoff .btn:hover {
+	border-color: #8a8a90;
+}
+
+body.bday.handoff button:disabled {
+	background: #262628;
+	border-color: #333335;
+	color: #6a6a6c;
+}
+
+body.bday.handoff button.best,
+body.bday.handoff button.held-ok,
+body.bday.handoff button.primary {
+	border-color: #4e9b57;
+	background: #1e3a24;
+	color: #8fd39a;
+}
+
+/* a disabled primary must still read as disabled, not as the thing to press */
+body.bday.handoff button.primary:disabled,
+body.bday.handoff button.best:disabled {
+	background: #262628;
+	border-color: #333335;
+	color: #6a6a6c;
+	font-weight: normal;
+}
+
+body.bday.handoff button.best-no,
+body.bday.handoff button.held-no {
+	border-color: #a85a55;
+	background: #3a1e1e;
+	color: #f0a09a;
+}
+
+body.bday.handoff button.held-pend {
+	border-color: #8a6f20;
+	background: #3a2f14;
+	color: #e0b45c;
+}
+
+body.bday.handoff .v-ok {
+	color: #8fd39a;
+}
+
+body.bday.handoff .v-no {
+	color: #f0a09a;
+}
+
+body.bday.handoff .v-pend {
+	color: #e0b45c;
+}
+
+body.bday.handoff .dot {
+	background: #4a4a4c;
+}
+
+body.bday.handoff .dot.outline {
+	background: transparent;
+	border-color: #6a6a6c;
+}
+
+body.bday.handoff .dot.ok {
+	background: #4e9b57;
+}
+
+body.bday.handoff .dot.ok.outline {
+	background: transparent;
+	border-color: #4e9b57;
+}
+
+body.bday.handoff .dot.no {
+	background: #a85a55;
+}
+
+body.bday.handoff .dot.no.outline {
+	background: transparent;
+	border-color: #a85a55;
+}
+
+body.bday.handoff .dot.back {
+	background: transparent;
+	border-color: #e0a100;
+}
+
+body.bday.handoff .simbar {
+	background: #232325;
+	border-color: #4a4a4c;
+	color: #9a9a9a;
+}
+
+body.bday.handoff .simbar b {
+	color: #c8c8c8;
+}
+
+body.bday.handoff code {
+	background: #2c2c2e;
+	color: #d0d0d0;
+}
+
+/* the one button the grader should press when they're finished */
+button.primary {
+	border-color: #137333;
+	background: #eaf5ec;
+	font-weight: bold;
+}
+
+button.primary:disabled {
+	border-color: #e5e5e5;
+	background: #fafafa;
+	font-weight: normal;
+}
+
 /* slide mapper */
 .box {
 	font-size: 12px;
@@ -559,6 +900,132 @@ tr.off {
 .flag {
 	color: #b06000;
 	font-size: 11px;
+}
+
+/* points-by-guess boxes: compact, in a row, fixed count so nothing reflows */
+.sched input[type="number"],
+.qsettings input[data-pg] {
+	width: 52px;
+}
+
+input[type="number"]:disabled {
+	color: #bbb;
+	background: #fafafa;
+	border-color: #eee;
+}
+
+/* the two order-matters checkboxes stay together on one line */
+.orderpair {
+	display: flex;
+	align-items: center;
+	gap: 10px;
+	font-size: 12px;
+	color: #333;
+}
+
+/* the grid gets its own full-width block, stacked rather than inline */
+.qsettings .gridwrap {
+	flex-basis: 100%;
+}
+
+/* answer-grid editor for list questions */
+table.gridedit {
+	border-collapse: collapse;
+	margin: 4px 0;
+}
+
+table.gridedit td {
+	padding: 2px;
+}
+
+table.gridedit input[type="text"] {
+	min-width: 150px;
+}
+
+/* one submitted element of a list answer; green once it counts */
+.el {
+	display: inline-block;
+	border: 1px solid #ddd;
+	border-radius: 3px;
+	padding: 1px 7px;
+	margin: 1px 0;
+	background: #fff;
+	overflow-wrap: anywhere;
+}
+
+.el.on {
+	border-color: #137333;
+	background: #eaf5ec;
+	color: #137333;
+	font-weight: bold;
+}
+
+.el[data-mark] {
+	cursor: pointer;
+}
+
+.el[data-mark]:hover {
+	border-color: #999;
+}
+
+/* the bracket around one grid row's worth of elements */
+.elrow {
+	white-space: nowrap;
+}
+
+/* session settings: one box per section */
+.panels {
+	display: flex;
+	flex-wrap: wrap;
+	align-items: flex-start;
+	gap: 14px;
+	margin-top: 10px;
+}
+
+.panel {
+	border: 1px solid #e5e5e5;
+	padding: 8px 14px 12px;
+	flex: 1 1 240px;
+	max-width: 340px; /* a lone box on its own row shouldn't stretch across the page */
+}
+
+.panel.wide {
+	flex-basis: 100%;
+	max-width: none;
+}
+
+body.host .panel h2 {
+	font-size: 13px;
+	color: #767676;
+	margin: 0 0 6px;
+	padding-bottom: 4px;
+	border-bottom: 1px solid #eee;
+}
+
+body.host .panel h3:first-of-type {
+	margin-top: 12px;
+}
+
+body.host h3 {
+	font-weight: normal;
+	font-size: 13px;
+	color: #767676;
+	margin: 14px 0 2px;
+	border-bottom: 1px solid #eee;
+}
+
+/* one cell per guess in the submission tracker */
+td.gcell {
+	min-width: 120px;
+}
+
+.gline {
+	margin-top: 3px;
+	white-space: nowrap;
+}
+
+.gline .dot {
+	margin-right: 4px;
 }
 
 /* review-queue item: the guess is the headline */
@@ -668,6 +1135,14 @@ button:disabled {
 
 select.short {
 	min-width: 0;
+}
+
+/* the answer key sits on its own line under the question */
+.answerline {
+	display: block;
+	color: #767676;
+	font-size: 13px;
+	margin-top: 2px;
 }
 
 /* full prompt under the evaluator's Qn picker */

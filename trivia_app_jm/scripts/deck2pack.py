@@ -165,7 +165,7 @@ def build_pack(slides, title):
         pts = POINTS_RE.findall(q_text + " " + cat)
         if len(pts) > 1:
             flags.append("multi-part")
-        points = int(pts[0]) if len(pts) == 1 else 10
+        points = int(pts[0]) if len(pts) == 1 else 8
 
         qid = f"q{len(questions) + 1}"
         questions.append(
@@ -176,9 +176,10 @@ def build_pack(slides, title):
                 "prompt": q_text,
                 "category": cat,
                 "answers": answers,
+                "kind": "single",
                 "points": points,
+                "guesses": 2,
                 "autograde": True,
-                "secondGuess": "grant",
                 "threshold": "auto",
                 "flags": flags,
             }

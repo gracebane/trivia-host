@@ -7,81 +7,101 @@
 		<link rel="stylesheet" href="styles.css" />
 	</head>
 	<body class="player">
-		<!-- Player client in an iPhone frame. States follow spec v4:
-		     join (roster picker) → lobby → collecting (answer box) →
-		     submitted/waiting → reveal (verdict). No timers; verdicts hidden
-		     until reveal (showVerdictsLive off); host can "send back" an answer
-		     while the question is open (resubmission grant). -->
+		<!-- Player client in an iPhone frame, matching what the host now does:
+		       · up to six guesses per question, each graded on its own, with a
+		         points schedule so the player can see what a later guess is worth
+		       · two question kinds — single answer (a textbox) and list answer
+		         (a grid of boxes the shape of the host's answer grid)
+		       · order-matters shown on the format line and by the grid's fixed cells
+		       · send back replaces the latest guess rather than adding one
+		       · Birthday Mode — the author of the current question sits it out
+		       · verdicts hidden until reveal unless the host turns them on live
+		     The player never sees question text or the answer key: the deck on the
+		     TV carries the question, and this screen carries only its FORMAT, which
+		     is what the server's player-scoped QUESTION frame sends.
+		     A refresh restores where you were (localStorage stands in for the
+		     server's reconnect snapshot). -->
 		<div class="phone">
 			<div class="screen">
 				<div class="topbar">
 					<span class="brand-sm">Trivia</span>
-					<span id="code" class="muted"></span>
 					<span id="whoTop" class="muted"></span>
+					<span id="scoreTop" class="muted"></span>
 				</div>
 
-				<!-- JOIN: roster picker as a dropdown -->
+				<!-- JOIN: two doors. Returning player is a roster pick, with this
+				     phone's last person pre-highlighted (one tap for the common case).
+				     New player types a name. Both end on the same Join button. -->
 				<div class="state" id="s-join">
 					<h1>Who are you?</h1>
-					<select id="nameSelect" class="wfull"></select>
-					<div class="newname" id="newnameWrap" style="display: none">
-						<input id="newname" type="text" placeholder="Your name" autocomplete="off" />
-						<button id="newnameOk" type="button">OK</button>
+					<div class="choice">
+						<button type="button" id="chooseReturning">Returning player</button>
+						<button type="button" id="chooseNew">New player</button>
 					</div>
-					<button id="joinBtn" class="wfull">Join</button>
-					<p class="muted">Live players are marked (live).</p>
+					<select id="nameSelect" class="wfull" style="display: none"></select>
+					<input id="newname" class="wfull" type="text" placeholder="Your name" autocomplete="off" style="display: none" />
+					<button id="joinBtn" class="wfull" style="display: none">Join</button>
 				</div>
 
-				<!-- LOBBY: joined, game not on your screen yet -->
+				<!-- LOBBY -->
 				<div class="state" id="s-lobby" style="display: none">
 					<h1>Welcome, <span class="who"></span></h1>
-					<p class="muted">You're in. Waiting for the next question…</p>
-					<a class="plain" href="#" data-switch>Not you? Switch player</a>
+					<p class="muted">Waiting for the first question…</p>
+					<a class="plain" href="#" data-switch>Not you?</a>
 				</div>
 
-				<!-- COLLECTING: answer the question shown on the TV -->
-				<div class="state" id="s-collecting" style="display: none">
-					<p class="qnum">Question <span class="qn"></span></p>
-					<p class="muted">Type your answer to the question on screen.</p>
-					<input id="answer" class="answer" type="text" placeholder="Your answer" autocomplete="off" />
-					<button id="submitBtn" class="wfull">Submit</button>
+				<!-- ANSWER: a textbox or a grid, for a first guess, a further guess, or a send-back -->
+				<div class="state" id="s-answer" style="display: none">
+					<p class="qnum" id="a-label"></p>
+					<div class="sendback" id="a-sendback" style="display: none">The host sent this one back. Fix it and resubmit.</div>
+					<p class="muted" id="a-format"></p>
+					<div id="a-input" class="wfull"></div>
+					<button id="submitBtn" class="wfull"></button>
+					<a class="plain" href="#" id="a-cancel" style="display: none">Never mind</a>
 				</div>
 
-				<!-- SUBMITTED: waiting; can't see verdict (showVerdictsLive off) -->
+				<!-- SUBMITTED: what you've sent, and the option of another guess -->
 				<div class="state" id="s-submitted" style="display: none">
-					<p class="qnum">Question <span class="qn"></span></p>
-					<p class="muted">Answer submitted</p>
-					<span class="pill" id="submittedAnswer"></span>
-					<p class="muted">Waiting for the host to reveal…</p>
+					<p class="qnum" id="s-label"></p>
+					<div id="s-guesses" class="guesslist"></div>
+					<button id="againBtn" class="wfull" style="display: none"></button>
+					<p class="muted" id="s-wait"></p>
 				</div>
 
-				<!-- SEND-BACK: host granted a resubmission while question still open -->
-				<div class="state" id="s-sendback" style="display: none">
-					<p class="qnum">Question <span class="qn"></span></p>
-					<div class="sendback">The host asked you to revise your answer.</div>
-					<input id="answer2" class="answer" type="text" placeholder="Your answer" autocomplete="off" />
-					<button id="resubmitBtn" class="wfull">Resubmit</button>
+				<!-- SIT OUT: Birthday Mode, and this question is yours -->
+				<div class="state" id="s-sitout" style="display: none">
+					<p class="qnum" id="o-label"></p>
+					<h1>This one's yours</h1>
+					<p class="muted">You're grading it, so you sit it out. Nobody scores on their own question.</p>
 				</div>
 
-				<!-- REVEAL: verdict for this question + running score -->
+				<!-- REVEAL: verdict per guess, points earned, running score -->
 				<div class="state" id="s-reveal" style="display: none">
-					<p class="qnum">Question <span class="qn"></span> — result</p>
-					<div id="verdict"></div>
-					<span class="pill" id="revealAnswer"></span>
-					<p class="muted">Score: <b><span id="score">0</span></b></p>
+					<p class="qnum" id="r-label"></p>
+					<div id="r-guesses" class="guesslist"></div>
+					<!-- points only if the host lets phones see them; otherwise the leaderboard on the TV is the reveal -->
+					<div id="r-earned" class="earned"></div>
+					<p class="muted" id="r-score">Score: <b><span id="score">0</span></b></p>
 					<p class="muted">Next question coming up…</p>
 				</div>
 			</div>
 		</div>
 
-		<!-- Mock host controls — NOT part of the phone UI. Lets you feel the flow. -->
+		<!-- Mock host controls — NOT part of the phone UI. -->
 		<div class="simbar">
 			<b>Simulate host</b> (mock only)<br />
 			<button class="btn" data-sim="open">▶ Open question</button>
 			<button class="btn" data-sim="sendback">↩ Send back</button>
-			<button class="btn" data-sim="reveal-ok">✓ Reveal correct</button>
-			<button class="btn" data-sim="reveal-no">✗ Reveal wrong</button>
+			<button class="btn" data-sim="right">✓ Grade latest right</button>
+			<button class="btn" data-sim="wrong">✗ Grade latest wrong</button>
+			<button class="btn" data-sim="reveal">◼ Close &amp; reveal</button>
 			<button class="btn" data-sim="next">» Next</button>
+			<br />
+			<label><input type="checkbox" id="liveToggle" /> Show verdicts live</label>
+			<label><input type="checkbox" id="ptsToggle" /> Show points on phones</label>
+			&nbsp; Jump to
+			<select id="jump"></select>
+			<button class="btn" data-sim="reset">Reset</button>
 		</div>
 
 		<script>
@@ -96,142 +116,351 @@
 				{ name: "Grace" },
 			];
 
-			const params = new URLSearchParams(location.search);
-			const code = params.get("code");
-			if (code) document.getElementById("code").textContent = code;
+			// ---- What the server's player-scoped QUESTION frame carries: the FORMAT
+			//      of each question and never its text or key. Mirrors the host's
+			//      mock pack. "YOU" marks a Birthday Mode question you wrote yourself.
+			const QUESTIONS = [
+				{ kind: "single", guesses: 2, points: [8, 4] },
+				{ kind: "single", guesses: 1, points: [8] },
+				{ kind: "list", guesses: 2, pointsPer: 2, rows: 4, cols: 1, orderX: false, orderY: false },
+				{ kind: "list", guesses: 1, pointsPer: 2, rows: 3, cols: 2, orderX: true, orderY: false },
+				{ kind: "single", guesses: 2, points: [8, 8], author: "Carol" },
+				{ kind: "single", guesses: 2, points: [8, 8], author: "YOU" },
+			];
+			const ORD = ["First", "Second", "Third", "Fourth", "Fifth", "Sixth"];
 
-			// device→person hint (a hint, not a binding), remembered locally
-			const hint = localStorage.getItem("mockPerson");
-
-			// ---- faux game state ----
-			const game = { name: null, qn: 1, score: 0, lastAnswer: "" };
-
-			// ---- state machine ----
-			const states = ["join", "lobby", "collecting", "submitted", "sendback", "reveal"];
-			function show(state) {
-				for (const s of states) {
-					document.getElementById("s-" + s).style.display = s === state ? "flex" : "none";
-				}
-				document.querySelectorAll(".qn").forEach((el) => (el.textContent = game.qn));
+			// ---- Player state. Persisted so a refresh lands you back where you were,
+			//      which is the mock's stand-in for the server's reconnect snapshot.
+			const KEY = "playerMock";
+			let game = { name: null, qi: -1, phase: "lobby", guesses: [], grant: false, adding: false, score: 0, live: false, showPts: false };
+			try {
+				const saved = JSON.parse(localStorage.getItem(KEY) || "null");
+				if (saved) game = { ...game, ...saved };
+			} catch {}
+			function save() {
+				try {
+					localStorage.setItem(KEY, JSON.stringify(game));
+				} catch {}
 			}
 
-			// ---- JOIN view ----
-			const NEW = "__new__";
-			const sel = document.getElementById("nameSelect");
-			const newWrap = document.getElementById("newnameWrap");
-			const newInput = document.getElementById("newname");
+			const $ = (s) => document.querySelector(s);
+			const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]);
+			const q = () => (game.qi >= 0 ? QUESTIONS[game.qi] : null);
+			const isList = (x) => x.kind === "list";
+			const mine = (x) => x.author === "YOU";
+			const qLabel = (x) => (x.author ? `${x.author === "YOU" ? "Your" : x.author + "'s"} question` : `Question ${game.qi + 1}`);
+			const pointsFor = (x, g) => (isList(x) ? null : x.points[Math.min(g, x.points.length) - 1]);
+			const canGuessMore = (x) => game.phase === "collecting" && game.guesses.length < x.guesses;
 
+			// ---- rendering ---------------------------------------------------
+			const STATES = ["join", "lobby", "answer", "submitted", "sitout", "reveal"];
+			function show(state) {
+				for (const s of STATES) $("#s-" + s).style.display = s === state ? "flex" : "none";
+			}
+			function render() {
+				save();
+				$("#whoTop").textContent = game.name || "";
+				$("#scoreTop").textContent = game.name && game.showPts ? `${game.score} pts` : "";
+				$("#liveToggle").checked = game.live;
+				$("#ptsToggle").checked = game.showPts;
+				$("#jump").value = String(game.qi);
+				if (!game.name) {
+					renderJoin();
+					return show("join");
+				}
+				const x = q();
+				if (!x || game.phase === "lobby") return show("lobby");
+				if (game.phase === "revealing") return renderReveal(x);
+				if (mine(x)) {
+					$("#o-label").textContent = qLabel(x);
+					return show("sitout");
+				}
+				if (game.grant || game.adding || game.guesses.length === 0) return renderAnswer(x);
+				return renderSubmitted(x);
+			}
+
+			// The format line: everything the player needs to answer well, in one line.
+			function formatLine(x, guessNo) {
+				if (isList(x)) {
+					const shape = x.cols > 1 ? `${x.rows} rows of ${x.cols}` : `List of ${x.rows}`;
+					const order = [x.orderX && x.cols > 1 ? "order matters across →" : "", x.orderY && x.rows > 1 ? "order matters down ↓" : ""].filter(Boolean).join(" · ");
+					const g = x.guesses > 1 ? ` · guess ${guessNo} of ${x.guesses}` : "";
+					return `${shape} · ${x.pointsPer} pts each${g}${order ? " · " + order : ""}`;
+				}
+				const pts = pointsFor(x, guessNo);
+				return x.guesses > 1 ? `Guess ${guessNo} of ${x.guesses} · ${pts} pts` : `One guess · ${pts} pts`;
+			}
+
+			// The input: a textbox for a single answer, a grid the shape of the host's
+			// answer grid for a list. Prefilled when a guess is being replaced.
+			function buildInput(x, prefill) {
+				const box = $("#a-input");
+				box.innerHTML = "";
+				if (!isList(x)) {
+					const inp = document.createElement("input");
+					Object.assign(inp, { className: "answer", type: "text", placeholder: "Your answer", autocomplete: "off", value: prefill?.text ?? "" });
+					inp.addEventListener("keydown", (e) => e.key === "Enter" && submit());
+					box.appendChild(inp);
+					inp.focus();
+					return;
+				}
+				const grid = document.createElement("div");
+				grid.className = "gridin";
+				grid.style.gridTemplateColumns = `repeat(${x.cols}, 1fr)`;
+				for (let r = 0; r < x.rows; r++)
+					for (let c = 0; c < x.cols; c++) {
+						const inp = document.createElement("input");
+						Object.assign(inp, { type: "text", autocomplete: "off", value: prefill?.items?.[r * x.cols + c] ?? "", placeholder: x.cols > 1 ? `row ${r + 1}` : `${r + 1}` });
+						grid.appendChild(inp);
+					}
+				box.appendChild(grid);
+				grid.querySelector("input").focus();
+			}
+			function readInput(x) {
+				if (!isList(x)) return { text: $("#a-input input").value.trim() };
+				// row-major, the order the host reads a submission in
+				return { items: [...$("#a-input").querySelectorAll("input")].map((i) => i.value.trim()) };
+			}
+			const payloadEmpty = (p) => (p.text !== undefined ? !p.text : p.items.every((t) => !t));
+
+			function renderAnswer(x) {
+				const replacing = game.grant;
+				const guessNo = replacing ? game.guesses.length : game.guesses.length + 1;
+				$("#a-label").textContent = qLabel(x);
+				$("#a-sendback").style.display = replacing ? "block" : "none";
+				$("#a-format").textContent = formatLine(x, guessNo);
+				buildInput(x, replacing ? game.guesses[game.guesses.length - 1].payload : null);
+				$("#submitBtn").textContent = replacing ? "Resubmit" : guessNo > 1 ? `Send guess ${guessNo}` : "Submit";
+				$("#a-cancel").style.display = game.adding ? "" : "none";
+				show("answer");
+			}
+
+			// One line per guess sent. Elements of a list are bracketed by row, the
+			// way the host's tracker shows them. Verdict dots only if the host
+			// has turned live verdicts on — otherwise nothing until reveal.
+			function guessLines(x, container, revealed) {
+				container.innerHTML = "";
+				game.guesses.forEach((g, i) => {
+					const row = document.createElement("div");
+					row.className = "guessrow";
+					const v = g.verdict;
+					const showV = revealed || game.live;
+					let mark = "";
+					if (showV && v) {
+						if (isList(x)) mark = `<span class="muted">${v.count} of ${x.rows * x.cols}</span>`;
+						else mark = v.state === "correct" ? `<span class="v-ok">✓</span>` : v.state === "incorrect" ? `<span class="v-no">✗</span>` : `<span class="muted">…</span>`;
+					} else if (showV) mark = `<span class="muted">…</span>`;
+					row.innerHTML = `<span class="ord">${ORD[i]} guess</span> <span class="gtext">${payloadHtml(x, g, showV && v)}</span> <span class="gmark">${mark}</span>`;
+					container.appendChild(row);
+				});
+			}
+			function payloadHtml(x, g, withMarks) {
+				if (!isList(x)) return esc(g.payload.text || "(blank)");
+				const items = g.payload.items;
+				const marks = withMarks && g.verdict?.marks ? g.verdict.marks : [];
+				const chip = (t, i) => `<span class="el${marks[i] ? " on" : ""}">${esc(t || "—")}</span>`;
+				if (x.cols <= 1) return items.map(chip).join(" ");
+				const rows = [];
+				for (let i = 0; i < items.length; i += x.cols) rows.push(`[${items.slice(i, i + x.cols).map((t, j) => chip(t, i + j)).join(", ")}]`);
+				return rows.join(", ");
+			}
+
+			function renderSubmitted(x) {
+				$("#s-label").textContent = qLabel(x);
+				guessLines(x, $("#s-guesses"), false);
+				const more = canGuessMore(x);
+				const again = $("#againBtn");
+				again.style.display = more ? "" : "none";
+				if (more) {
+					const n = game.guesses.length + 1;
+					const pts = pointsFor(x, n);
+					again.textContent = `Another guess${pts !== null ? ` · ${pts} pts` : ""} (${x.guesses - game.guesses.length} left)`;
+				}
+				$("#s-wait").textContent = more ? "" : "Waiting for the host…";
+				show("submitted");
+			}
+
+			// Reveal: what each guess got, what the question paid, and the running score.
+			function renderReveal(x) {
+				$("#r-label").textContent = `${qLabel(x)} — result`;
+				if (mine(x)) {
+					$("#r-guesses").innerHTML = `<p class="muted">You sat this one out.</p>`;
+					$("#r-earned").textContent = "";
+				} else {
+					guessLines(x, $("#r-guesses"), true);
+					const e = earned(x);
+					$("#r-earned").textContent = game.guesses.length ? (e > 0 ? `+${e}` : "0") : "No answer · 0";
+					$("#r-earned").className = "earned " + (e > 0 ? "v-ok" : "v-no");
+				}
+				$("#score").textContent = game.score;
+				$("#r-earned").style.display = game.showPts ? "" : "none";
+				$("#r-score").style.display = game.showPts ? "" : "none";
+				show("reveal");
+			}
+			// Same fold as the host: earliest correct guess for a single answer, best
+			// confirmed guess for a list. Ungraded at reveal counts as nothing.
+			function earned(x) {
+				if (isList(x)) {
+					const best = Math.max(0, ...game.guesses.map((g) => g.verdict?.count ?? 0));
+					return best * x.pointsPer;
+				}
+				const i = game.guesses.findIndex((g) => g.verdict?.state === "correct");
+				return i < 0 ? 0 : pointsFor(x, i + 1);
+			}
+
+			// ---- actions -----------------------------------------------------
+			function submit() {
+				const x = q();
+				const payload = readInput(x);
+				if (payloadEmpty(payload)) return;
+				if (game.grant) {
+					game.guesses[game.guesses.length - 1] = { payload, verdict: null }; // send-back replaces the latest
+					game.grant = false;
+				} else if (canGuessMore(x)) {
+					game.guesses.push({ payload, verdict: null });
+				}
+				game.adding = false;
+				render();
+			}
+			function openQuestion(i) {
+				game.qi = i;
+				game.phase = "collecting";
+				game.guesses = [];
+				game.grant = false;
+				game.adding = false;
+				render();
+			}
+			function reveal() {
+				const x = q();
+				if (!x || game.phase !== "collecting") return;
+				game.phase = "revealing";
+				game.grant = false;
+				game.adding = false;
+				if (!mine(x)) game.score += earned(x);
+				render();
+			}
+
+			// ---- join --------------------------------------------------------
+			const sel = $("#nameSelect");
+			const newInput = $("#newname");
+			let hint = null;
+			try {
+				hint = localStorage.getItem("mockPerson");
+			} catch {}
+			let joinMode = hint ? "returning" : null; // a known phone lands straight on its name
 			function renderRoster() {
 				sel.innerHTML = "";
-				const ordered = [...roster.filter((p) => !p.live), ...roster.filter((p) => p.live)];
-				for (const p of ordered) {
+				for (const p of [...roster.filter((p) => !p.live), ...roster.filter((p) => p.live)]) {
 					const o = document.createElement("option");
 					o.value = p.name;
 					o.textContent = p.live ? p.name + " (live)" : p.name;
 					if (p.name === hint) o.selected = true;
 					sel.appendChild(o);
 				}
-				const o = document.createElement("option");
-				o.value = NEW;
-				o.textContent = "+ New player…";
-				sel.appendChild(o);
 			}
-
-			// Inline new-player entry (no popup): reveal a textbox instead.
-			sel.addEventListener("change", () => {
-				if (sel.value === NEW) {
-					newWrap.style.display = "flex";
-					newInput.focus();
+			function renderJoin() {
+				$("#chooseReturning").classList.toggle("on", joinMode === "returning");
+				$("#chooseNew").classList.toggle("on", joinMode === "new");
+				sel.style.display = joinMode === "returning" ? "" : "none";
+				newInput.style.display = joinMode === "new" ? "" : "none";
+				$("#joinBtn").style.display = joinMode ? "" : "none";
+				$("#joinBtn").textContent = joinMode === "new" ? "Join as new player" : "Join";
+				if (joinMode === "new") newInput.focus();
+			}
+			$("#chooseReturning").onclick = () => { joinMode = "returning"; renderJoin(); };
+			$("#chooseNew").onclick = () => { joinMode = "new"; renderJoin(); };
+			newInput.addEventListener("keydown", (e) => e.key === "Enter" && $("#joinBtn").click());
+			$("#joinBtn").onclick = () => {
+				let who;
+				if (joinMode === "new") {
+					who = newInput.value.trim();
+					if (!who) return newInput.focus();
+					if (!roster.some((p) => p.name === who)) roster.push({ name: who }); // server would mint a personId here
 				} else {
-					newWrap.style.display = "none";
+					who = sel.value;
 				}
-			});
-			function confirmNewName() {
-				const name = newInput.value.trim();
-				if (!name) return;
-				roster.push({ name });
-				renderRoster();
-				sel.value = name;
-				newWrap.style.display = "none";
-			}
-			document.getElementById("newnameOk").onclick = confirmNewName;
-			newInput.addEventListener("keydown", (e) => {
-				if (e.key === "Enter") confirmNewName();
-			});
-
-			document.getElementById("joinBtn").onclick = () => {
-				if (sel.value === NEW) {
-					confirmNewName();
-					if (sel.value === NEW) return; // still no name
-				}
-				join(sel.value);
+				if (!who) return;
+				game.name = who;
+				try {
+					localStorage.setItem("mockPerson", who);
+				} catch {}
+				hint = who;
+				document.querySelectorAll(".who").forEach((el) => (el.textContent = who));
+				render();
 			};
-
-			function join(name) {
-				game.name = name;
-				localStorage.setItem("mockPerson", name);
-				document.querySelectorAll(".who").forEach((el) => (el.textContent = name));
-				document.getElementById("whoTop").textContent = name;
-				// Drop straight into a live question so you can type an answer.
-				show("collecting");
-			}
-
 			document.querySelectorAll("[data-switch]").forEach((el) =>
 				el.addEventListener("click", (e) => {
 					e.preventDefault();
-					show("join");
+					game.name = null;
+					joinMode = "returning";
+					renderRoster();
+					render();
 				}),
 			);
 
-			// ---- answering ----
-			function submitAnswer(value) {
-				game.lastAnswer = value.trim();
-				document.getElementById("submittedAnswer").textContent = game.lastAnswer || "(blank)";
-				show("submitted");
-			}
-			document.getElementById("submitBtn").onclick = () =>
-				submitAnswer(document.getElementById("answer").value);
-			document.getElementById("resubmitBtn").onclick = () =>
-				submitAnswer(document.getElementById("answer2").value);
+			// ---- wiring ------------------------------------------------------
+			$("#submitBtn").onclick = submit;
+			$("#againBtn").onclick = () => {
+				game.adding = true;
+				render();
+			};
+			$("#a-cancel").onclick = (e) => {
+				e.preventDefault();
+				game.adding = false;
+				render();
+			};
+			$("#liveToggle").onchange = (e) => {
+				game.live = e.target.checked;
+				render();
+			};
+			$("#ptsToggle").onchange = (e) => {
+				game.showPts = e.target.checked;
+				render();
+			};
+			QUESTIONS.forEach((x, i) => {
+				const o = document.createElement("option");
+				o.value = String(i);
+				o.textContent = x.author ? `${i + 1} · Birthday · ${x.author === "YOU" ? "yours" : x.author + "'s"}` : `${i + 1} · ${isList(x) ? `list ${x.rows}×${x.cols}` : `single, ${x.guesses} guess${x.guesses > 1 ? "es" : ""}`}`;
+				$("#jump").appendChild(o);
+			});
+			$("#jump").onchange = (e) => openQuestion(Number(e.target.value));
 
-			// ---- mock host controls ----
+			// Mock host actions. Grading marks the LATEST guess, the way the host's
+			// queue would; a list "wrong" is a half-right list, so partial credit shows.
 			document.querySelectorAll("[data-sim]").forEach((b) =>
 				b.addEventListener("click", () => {
-					if (!game.name) return; // must join first
 					const act = b.dataset.sim;
-					if (act === "open") show("collecting");
-					else if (act === "sendback") {
-						document.getElementById("answer2").value = game.lastAnswer;
-						show("sendback");
-					} else if (act === "reveal-ok") reveal(true);
-					else if (act === "reveal-no") reveal(false);
-					else if (act === "next") {
-						game.qn++;
-						game.lastAnswer = "";
-						document.getElementById("answer").value = "";
-						show("collecting");
+					if (act === "reset") {
+						try {
+							localStorage.removeItem(KEY);
+						} catch {}
+						game = { name: game.name, qi: -1, phase: "lobby", guesses: [], grant: false, adding: false, score: 0, live: game.live, showPts: game.showPts };
+						return render();
 					}
+					if (!game.name) return;
+					const x = q();
+					if (act === "open") return openQuestion(game.qi < 0 ? 0 : game.qi);
+					if (act === "next") return openQuestion((game.qi + 1) % QUESTIONS.length);
+					if (!x || game.phase !== "collecting") return;
+					if (act === "sendback") {
+						if (game.guesses.length) game.grant = true;
+						return render();
+					}
+					if (act === "reveal") return reveal();
+					const g = game.guesses[game.guesses.length - 1];
+					if (!g) return;
+					if (isList(x)) {
+						const n = x.rows * x.cols;
+						const marks = g.payload.items.map((t, i) => !!t && (act === "right" || i % 2 === 0));
+						g.verdict = { marks, count: Math.min(n, marks.filter(Boolean).length), confirmed: true };
+					} else g.verdict = { state: act === "right" ? "correct" : "incorrect", confirmed: true };
+					render();
 				}),
 			);
 
-			function reveal(correct) {
-				const v = document.getElementById("verdict");
-				if (correct) {
-					v.className = "verdict-ok";
-					v.textContent = "Correct!";
-					game.score += 10;
-				} else {
-					v.className = "verdict-no";
-					v.textContent = "Not this time.";
-				}
-				document.getElementById("revealAnswer").textContent =
-					"You said: " + (game.lastAnswer || "(blank)");
-				document.getElementById("score").textContent = game.score;
-				show("reveal");
-			}
-
 			renderRoster();
-			show("join");
+			if (game.name) document.querySelectorAll(".who").forEach((el) => (el.textContent = game.name));
+			render();
 		</script>
 	</body>
 </html>

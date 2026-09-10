@@ -9,8 +9,9 @@
 	<body class="board">
 		<!-- The ?view=leaderboard client. Opened as a tab from the host, torn out to
 		     the TV once at setup, alt-tabbed to between rounds. It's a moment, not
-		     an ambient display. Ties share the average of the tied ranks; scores
-		     alongside ranks are a host toggle (default on). In the real app this is
+		     an ambient display. Ranks arrive already computed by the host, under
+		     whichever tie rule is set there; scores alongside ranks are a host
+		     toggle (default on). In the real app this is
 		     its own socket client; in the mock it reads what host.html publishes to
 		     localStorage and updates on the storage event. -->
 		<div class="card">

@@ -7,53 +7,97 @@
 		<link rel="stylesheet" href="styles.css" />
 	</head>
 	<body>
+		<!-- One site, two doors (spec: "Entry model"). The doors are deliberately
+		     NOT symmetrical: every guest uses the player door, and exactly one
+		     person ever uses the host door. A guest who taps "Host" gets a
+		     passphrase box they cannot satisfy, which reads as broken, so the host
+		     entrance is a small link rather than a matching button.
+
+		     Mock divergence from the spec: the player button goes straight through
+		     rather than asking for the lobby password (imstupid). In the real app
+		     that password is the room identifier and still gates entry; the QR
+		     embeds it so scanning bypasses the field anyway. -->
 		<div class="card">
 			<p class="brand">Trivia</p>
-			<p class="sub">Enter the code to join</p>
+			<p class="sub">Scan the code, or tap below</p>
 
-			<!-- One field. Per spec v4 the 4-letter room code is cut: the lobby
-			     password IS the room identifier, so code and password are the same.
-			     Placeholders (hardcoded for now): imstupid → player, imwithstupid → host. -->
-			<form id="joinForm">
-				<div>
-					<input id="code" type="text" placeholder="Code" autocomplete="off" autofocus />
-				</div>
-				<div class="row">
-					<button type="submit">Enter</button>
-				</div>
-				<p class="note" id="err" style="color: #c00; display: none">Unrecognized code</p>
-			</form>
+			<div class="row">
+				<a class="btn big" href="player.html?code=imstupid">Join as a player</a>
+			</div>
 
-			<!-- QR encodes the player path with the code embedded (scan bypasses the
-			     form). Placeholder — needs a server to actually deliver the page. -->
 			<div class="qr">
 				<img id="qr" alt="QR to join" />
 			</div>
 			<p class="note">Scan to join on a phone (placeholder)</p>
+
+			<!-- The host entrance. Tucked under a rule, muted, no button chrome. -->
+			<div class="hostdoor">
+				<a class="plain" id="hostLink" href="#">Host</a>
+				<form id="hostForm" style="display: none">
+					<input id="pass" type="password" placeholder="Passphrase" autocomplete="current-password" />
+					<button type="submit">Enter</button>
+					<a class="plain" id="hostCancel" href="#">Cancel</a>
+					<p class="note" id="err" style="color: #c00; display: none">That isn't the passphrase</p>
+				</form>
+			</div>
 		</div>
 
 		<script>
-			const codeEl = document.getElementById("code");
+			// Hardcoded for now, per spec. The player password (imstupid) is the room
+			// identifier in the real app; the host passphrase is independent of it.
+			const HOST_PASSPHRASE = "imwithstupid";
+			const TOKEN_KEY = "hostToken";
 
-			// Placeholder credentials. The value decides where you land.
-			const ROUTES = { imstupid: "player.html", imwithstupid: "host.html" };
+			const hostLink = document.getElementById("hostLink");
+			const hostForm = document.getElementById("hostForm");
+			const pass = document.getElementById("pass");
+			const err = document.getElementById("err");
 
-			document.getElementById("joinForm").addEventListener("submit", (e) => {
+			// A correct passphrase mints a session token so a refresh doesn't re-prompt.
+			// The passphrase itself stays sufficient from any device — that's the
+			// battery-death recovery path, so the token is a convenience, not a key.
+			let token = null;
+			try {
+				token = localStorage.getItem(TOKEN_KEY);
+			} catch {}
+			if (token) hostLink.textContent = "Continue as host";
+
+			function enterHost() {
+				location.href = "host.html?code=" + encodeURIComponent(HOST_PASSPHRASE);
+			}
+
+			hostLink.addEventListener("click", (e) => {
 				e.preventDefault();
-				const code = codeEl.value.trim().toLowerCase();
-				const dest = ROUTES[code];
-				if (!dest) {
-					document.getElementById("err").style.display = "block";
+				if (token) return enterHost(); // already signed in on this browser
+				hostLink.style.display = "none";
+				hostForm.style.display = "block";
+				pass.focus();
+			});
+			document.getElementById("hostCancel").addEventListener("click", (e) => {
+				e.preventDefault();
+				hostForm.style.display = "none";
+				hostLink.style.display = "";
+				err.style.display = "none";
+				pass.value = "";
+			});
+			hostForm.addEventListener("submit", (e) => {
+				e.preventDefault();
+				if (pass.value.trim() !== HOST_PASSPHRASE) {
+					err.style.display = "block";
+					pass.select();
 					return;
 				}
-				location.href = dest + "?code=" + encodeURIComponent(code);
+				try {
+					localStorage.setItem(TOKEN_KEY, "mock-" + Date.now());
+				} catch {}
+				enterHost();
 			});
 
+			// The QR encodes the player path with the lobby password embedded, so
+			// scanning skips the landing page entirely.
 			const target = new URL("player.html?code=imstupid", location.href).href;
 			const qr = document.getElementById("qr");
-			qr.src =
-				"https://api.qrserver.com/v1/create-qr-code/?size=150x150&data=" +
-				encodeURIComponent(target);
+			qr.src = "https://api.qrserver.com/v1/create-qr-code/?size=150x150&data=" + encodeURIComponent(target);
 			qr.onerror = () => {
 				qr.replaceWith(
 					Object.assign(document.createElement("div"), {

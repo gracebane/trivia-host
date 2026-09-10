@@ -24,12 +24,21 @@ build step for the UI mockups — they are plain HTML you can open directly.
 
 ## Status
 
-Working: socket plumbing (connect, join, disconnect, reconnect with a full
-snapshot), deck import from .pptx in the browser, thumbnail rendering, the host
-mockup end to end against fake data.
+Working, as clickable mockups against fake data: the host controller end to
+end (question kinds, up to six guesses with a points schedule, list answers
+graded per element from a grid, a review queue, session defaults), the player
+client matching all of it, the landing page with a host passphrase, the
+tear-out leaderboard, and Reilly Birthday Mode — everyone brings a two-slide
+deck, the collate script merges them, the author grades their own question on
+a dark hand-off screen and sits it out, and the host never sees the answers.
+
+Working for real: socket plumbing (connect, join, disconnect, reconnect with a
+full snapshot), deck import from .pptx in the browser, thumbnail rendering via
+LibreOffice, and an EGA pixel-art converter (CLI and browser) in `assets/`.
 
 Not built yet: the phase machine and scoring on the server, D1, the real
-answer matcher (being prototyped in Python first).
+answer matcher (Python prototype first, then ported), and any socket between
+the mockups and the server.
 
 ## Overlapping pieces worth diffing
 

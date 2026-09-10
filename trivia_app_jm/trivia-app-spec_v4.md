@@ -110,6 +110,19 @@ The app knows which question is which. Questions have stable IDs; the host clien
 - **Accepted cost:** deck drift. The app's idea of the current question can diverge from what's on the TV
 - Strengthens the case for the pinned optional deck upload (thumbnails / extracted question text, reference only)
 
+### Question kinds
+
+A question carries a `kind`. Two exist:
+
+- **Single answer** (`single`) — one response judged against a list of accepted answers. Everything the app did before kinds existed. Scored by the per-guess points schedule.
+- **List answer** (`list`) — several elements judged against a **grid**, scoring a fixed number of points **per element matched**. `grid[row][col]` holds the accepted wordings of one element; a plain list is a one-column grid. Two independent flags say whether order counts, and they act on separate axes: `orderX` means column order counts *within* a row (country then capital), `orderY` means the rows themselves must arrive in grid order. An axis with only one element ignores its flag. A submission is read in the grid's own shape, `cols` elements per row; with `orderY` off, each submitted row is assigned to the unused grid row it answers best. The question's maximum is `pointsPer × filled cells`, so it depends on the size of the grid rather than a fixed number.
+
+**Which guess counts differs by kind.** A single answer takes the *earliest* confirmed-correct guess. A list takes the *best* confirmed guess — a later, fuller list should beat an earlier thin one, and a guess still in the queue can only improve the score.
+
+**List autograding is conservative:** a clean sweep of the grid auto-confirms, anything partial goes to the review queue. Partial credit is a judgment call and gets a human look by default.
+
+**Grading a list is per element, by clicking.** The review queue shows the submitted elements as boxes, green for the ones that count, grouped in brackets one bracket per grid row when the grid has more than one column. The grader clicks an element to toggle it, so accepting a wording the matcher missed is one click. The submission tracker shows the same bracketed elements read-only alongside the point total, and a ✓ to sign the total off. A grader can never be credited with more elements than the grid holds.
+
 ### Question packs
 
 - JSON, bidirectionally editable — the host can hand-write it or build it in the UI and export
@@ -119,7 +132,7 @@ The app knows which question is which. Questions have stable IDs; the host clien
 
 ### Answer matching
 
-Normalize (lowercase, strip punctuation and accents, drop leading articles, collapse whitespace), then Damerau-Levenshtein with a length-scaled threshold, roughly `floor(len/5)` — so short answers require an exact match. Per-question override allowed.
+Normalize (lowercase, strip punctuation and accents, drop leading articles, collapse whitespace), then Damerau-Levenshtein with a length-scaled threshold, `floor(len/3)` — so answers under three characters require an exact match. Per-question override allowed, and a session default.
 
 ### Verdicts
 
@@ -139,7 +152,15 @@ Session setting `showVerdictsLive`, **default off** — players don't see verdic
 
 ## Two distinct host powers, different lifetimes
 
-**Resubmission grant** — per-player, only while the question is open. The host hands one player their textbox back (typo, incomplete answer).
+**Guess allowance** — per question, 1 to 6, default 2. A player may submit up to that many guesses while the question is open; each is its own row in the log and is graded on its own. The host's tracker shows one column per allowed guess.
+
+**Which guess counts.** The **earliest confirmed-correct guess** wins. First right and second wrong is correct; a later wrong guess never cancels an earlier right one. First wrong and second right is also correct, and pays the second-guess amount below. Both right pays the first-guess amount.
+
+**Points are a schedule**, one entry per guess: what a player gets if that guess is the first one confirmed correct. `8 · 8` is no deduction, `8 · 4` is half off the second guess. A bare number in a pack means the same for every guess. The schedule always has exactly as many entries as the question has guesses; changing the guess count pads it by repeating the last value, or trims it.
+
+**Question defaults** — *every* field in a question's settings has a default in session settings; that pairing is the rule, not a coincidence, and a new field should be added in both places. The panel is grouped by question kind: **all questions** (type, guesses, autograde, fuzzy threshold), **single answer** (the points schedule, default `8 · 8`), **list answer** (points per element, default 2, and the two order flags). The schedule always shows all six boxes with the unused ones greyed, so changing the guess count doesn't reflow the row. Every new question starts with them, whether added by hand, imported from a deck, or collated for birthday mode. Existing questions keep theirs.
+
+**Resubmission grant** — per-player, only while the question is open. The host hands one player their textbox back (typo, incomplete answer). It replaces their latest guess rather than adding one; the replaced text is kept, struck through.
 
 Not a phase change:
 
@@ -180,8 +201,9 @@ This is the only signal the host has for when to move on, given no timer.
 
 ## Leaderboard
 
-- **Ties take the average of the tied ranks.** Two players tied for 1st are both rank 1.5
-- If fractional ranks are awkward in the archive, store the higher integer rank there instead
+- **Tie handling is a session setting, `sharedRank`, default on.** On, tied players share the better rank and the next rank skips: `1 · 2 · 2 · 4`. Off, they take the average of the ranks they cover: `1 · 2.5 · 2.5 · 4`
+- Superseded: average-of-tied-ranks used to be the only rule. It is now the off position, kept because the archive may prefer a single number per placing
+- Shared ranks are always integers, which also removes the "fractional ranks are awkward in the archive" problem when the default is left on
 - **Scores shown alongside ranks: toggleable, default on**
 - Final-standing ties (prize allocation, etc.) handled later — out of scope for now
 
@@ -205,6 +227,29 @@ The idle timeout exists only to stop abandoned rooms accumulating, not to serve 
 ### Rounds
 
 Not a software concept. Purely an out-of-app way to chunk breaks.
+
+---
+
+## Reilly Birthday Mode
+
+A session setting, off by default, for a party where **every guest brings one question** as a two-slide `.pptx` and **grades it themselves**. The host is a player too.
+
+**Collation.** `scripts/birthday_collate.py` merges one folder of guest decks into a single presentation: slide 1 is an index of who's up in what order, then each guest's question slide followed by their answer slide. Names come from the filenames. Order is random by default, seeded and printed so the draw is fair *and* reproducible; alphabetical, file order, an explicit list, and `--first` / `--last` pins are also available. It writes a pack alongside with **no question or answer text**, only author, slide numbers and points, and it never prints question text either.
+
+**Self-describing deck.** The index slide carries a small machine-readable footer. Loading the merged `.pptx` into the host client detects it, switches the mode on, and takes the order from the footer, reading nothing else from the deck: no pictures, no slide text, no mapper.
+
+**What the mode changes in the host client** (all read at point of use; toggling is live, no reload):
+
+- Questions are named after their author everywhere: the guess evaluator's picker, the status strip, the deck-sync hint
+- The slide tracker shows participant, slide numbers, points and status. No question, no answers, no thumbnails, no flags
+- Per-question settings shrink to points, deck slide and second-guess policy
+- Nothing autogrades. Every answer lands in the review queue as **ungraded** (grey outline, nothing pre-highlighted) and the author calls it
+- The author sits out their own question: not expected to answer, not counted in the close tally or the stats, scores 0 on it. Fair as long as everyone brings exactly one
+- **The host cannot read the guesses.** The host is playing too, so while they hold the laptop every submitted answer is covered in the guess evaluator: the review queue and the tracker show masked placeholders instead of text. Everything else stays live — who has answered, verdict states, counts, point totals, and every grading control. Handing the laptop to the author uncovers the text for them.
+- **Hand-off runs dark.** The whole page switches to a dark theme for the duration. It only ever happens in this mode, and the colour change is the signal, readable across a room, that the laptop is not the host's any more.
+- **Hand-off.** A "Hand to *name*" button hides the control strip, the tabs and the question picker, leaving only the live question's queue and tracker. The bar has three buttons: **Close question**, **Done, hand to *next name*** (disabled until the question is closed; advances and stays in hand-off for the next author, so the laptop can go round the whole room without returning to the host; on the last question it ends the chain), and **Return to host** as the escape. In the real client, Return requires the host passphrase; in the mockup it is a button
+
+**Not decided yet:** compensation when someone brings zero or two questions; whether the birthday person plays, grades, or only presents; a grader credential cheaper than the host passphrase.
 
 ---
 
@@ -249,6 +294,7 @@ The game log goes to permanent storage (D1) at game end.
 ## Deferred, explicitly
 
 - **Pack schema** — field names, types, and defaults for the host-authored JSON. Needed before the matcher port
+- **Player-side display of multiple guesses.** With up to 6 guesses per question, the player client needs a way to show what they've sent that adapts to the allowance: one textbox per remaining guess, or a single cell that lists "first guess: …, second guess: …" and grows. Not designed yet; the host side is done
 - Final-tie resolution
 - Where packs live if ever stored server-side
 - How stats handle a question whose answer list changed between parties
