@@ -1,0 +1,366 @@
+<!doctype html>
+<html lang="en">
+	<head>
+		<meta charset="utf-8" />
+		<meta name="viewport" content="width=device-width, initial-scale=1" />
+		<title>Trivia — Device wall</title>
+		<style>
+			/* Standalone: styles.css is for the app, this page is the workbench. */
+			* {
+				box-sizing: border-box;
+			}
+			body {
+				margin: 0;
+				font: 13px -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
+				background: #d8d8d8;
+				color: #111;
+			}
+			header {
+				position: sticky;
+				top: 0;
+				z-index: 10;
+				background: #fff;
+				border-bottom: 1px solid #bbb;
+				padding: 8px 12px;
+				display: flex;
+				flex-wrap: wrap;
+				gap: 6px 10px;
+				align-items: center;
+			}
+			header b {
+				font-size: 13px;
+			}
+			button,
+			select {
+				font: inherit;
+				padding: 4px 8px;
+				border: 1px solid #999;
+				border-radius: 4px;
+				background: #fff;
+				cursor: pointer;
+			}
+			button:hover {
+				background: #f0f0f0;
+			}
+			button.primary {
+				background: #111;
+				color: #fff;
+				border-color: #111;
+			}
+			label {
+				display: inline-flex;
+				align-items: center;
+				gap: 4px;
+				white-space: nowrap;
+			}
+			.sep {
+				width: 1px;
+				height: 20px;
+				background: #ccc;
+			}
+			.muted {
+				color: #666;
+			}
+
+			.wall {
+				display: flex;
+				flex-wrap: wrap;
+				align-items: flex-start;
+				gap: 18px;
+				padding: 16px 12px 40px;
+			}
+			figure {
+				margin: 0;
+				display: flex;
+				flex-direction: column;
+				align-items: center;
+				gap: 6px;
+			}
+			/* The frame is sized in real device pixels and scaled down as a whole, so
+			   what you see is the true layout, not a narrower one reflowed to fit. */
+			.holder {
+				position: relative;
+				background: #111;
+				border-radius: 22px;
+				padding: 10px;
+				box-shadow: 0 6px 20px rgba(0, 0, 0, 0.28);
+				transform-origin: top left;
+			}
+			.holder.flat {
+				border-radius: 4px;
+				padding: 4px;
+			}
+			iframe {
+				display: block;
+				border: 0;
+				background: #fff;
+				border-radius: 14px;
+			}
+			.holder.flat iframe {
+				border-radius: 0;
+			}
+			figcaption {
+				font-size: 11px;
+				color: #333;
+				text-align: center;
+				line-height: 1.4;
+			}
+			figcaption b {
+				display: block;
+				font-size: 12px;
+			}
+			.dim {
+				color: #777;
+			}
+			.warn {
+				color: #b00;
+			}
+		</style>
+	</head>
+	<body>
+		<!-- Device wall: one player client per screen size, all mirroring the same
+		     state. Each iframe is sized to that device's real CSS-pixel viewport and
+		     scaled as a unit, so the layout you see is the layout that device gets.
+		     Mirroring rides on localStorage: player.html writes its state on every
+		     render and adopts any write from another frame. -->
+		<header>
+			<b>Device wall</b>
+			<span class="muted">every phone mirrors the same player</span>
+			<span class="sep"></span>
+			<button data-all="restart">Restart all</button>
+			<button data-all="reset">Reset game</button>
+			<span class="sep"></span>
+			<button data-sim="open" class="primary">▶ Open question</button>
+			<select id="jump" title="jump to a question"></select>
+			<button data-sim="sendback">↩ Send back</button>
+			<button data-sim="right">✓ Right</button>
+			<button data-sim="wrong">✗ Wrong</button>
+			<button data-sim="reveal">◼ Close &amp; reveal</button>
+			<button data-sim="next">» Next</button>
+			<span class="sep"></span>
+			<label>Teams <select id="teamMode"><option value="off">off</option><option value="pick">players pick</option><option value="random">random</option></select></label>
+			<button data-sim="deal" id="deal">Deal</button>
+			<button data-sim="mate">+ Teammate</button>
+			<button data-sim="matevote">Teammate votes</button>
+			<button data-sim="mutiny">Teammates all agree</button>
+			<span class="sep"></span>
+			<label>Reilly says <input id="sayInput" type="text" placeholder="type a line…" size="26" /></label>
+			<button id="sayBtn">Say it</button>
+			<button data-sim="hush">Clear</button>
+			<span class="sep"></span>
+			<label><input type="checkbox" id="liveToggle" /> Verdicts live</label>
+			<label><input type="checkbox" id="ptsToggle" /> Points on phones</label>
+			<span class="sep"></span>
+			<label>Zoom <input type="range" id="zoom" min="30" max="100" value="100" style="width: 90px" /> <span id="zoomLabel" class="muted"></span></label>
+			<label><input type="checkbox" id="tablets" /> Tablets</label>
+			<label><input type="checkbox" id="rbd" /> Birthday skin</label>
+			<label><input type="checkbox" id="strict" /> Strict EGA</label>
+			<label title="also in the host's session settings">Type <select id="font"><option value="scumm">SCUMM</option><option value="mono">DOS mono</option></select></label>
+			<span class="sep"></span>
+			<span id="stateLine" class="muted"></span>
+		</header>
+
+		<div class="wall" id="wall"></div>
+
+		<script>
+			// Real CSS-pixel viewports, portrait. `dpr` is only shown, never applied:
+			// layout happens in CSS pixels, so that is what the wall renders.
+			// `safe` is the chrome the browser eats (address bar etc.) on that device.
+			const DEVICES = [
+				{ name: "iPhone SE (1st gen)", w: 320, h: 568, dpr: 2, note: "smallest still in use" },
+				{ name: "Galaxy S8 / small Android", w: 360, h: 740, dpr: 3 },
+				{ name: "iPhone SE (2nd/3rd)", w: 375, h: 667, dpr: 2, note: "short screen" },
+				{ name: "iPhone 12 / 13 / 14", w: 390, h: 844, dpr: 3 },
+				{ name: "iPhone 15 / 16 Pro", w: 393, h: 852, dpr: 3 },
+				{ name: "Pixel 7 / 8", w: 412, h: 915, dpr: 2.6 },
+				{ name: "iPhone 14/15 Pro Max", w: 430, h: 932, dpr: 3 },
+			];
+			const TABLETS = [
+				{ name: "iPad mini", w: 744, h: 1133, dpr: 2, flat: true },
+				{ name: "iPad Pro 11", w: 834, h: 1194, dpr: 2, flat: true },
+			];
+
+			const $ = (s) => document.querySelector(s);
+			// Which build of the phone the wall shows. rbd_player.html is generated
+			// from player.html, so the two behave identically and only look different.
+			const RBD_KEY = "mockRbdSkin";
+			// A cache buster per page load. Without it a browser happily serves the
+			// phone it fetched an hour ago and edits appear not to have landed.
+			const BUST = Date.now();
+			const phoneSrc = () => `${$("#rbd").checked ? "rbd_player" : "player"}.html?embed=1&v=${BUST}`;
+			const wall = $("#wall");
+			let frames = [];
+
+			function build() {
+				const list = DEVICES.concat($("#tablets").checked ? TABLETS : []);
+				wall.innerHTML = "";
+				frames = [];
+				for (const d of list) {
+					const fig = document.createElement("figure");
+					const hold = document.createElement("div");
+					hold.className = "holder" + (d.flat ? " flat" : "");
+					const f = document.createElement("iframe");
+					f.src = phoneSrc();
+					f.width = d.w;
+					f.height = d.h;
+					f.title = d.name;
+					hold.appendChild(f);
+					const cap = document.createElement("figcaption");
+					cap.innerHTML = `<b>${d.name}</b><span class="dim">${d.w} × ${d.h} css · @${d.dpr}x</span>${d.note ? `<br><span class="warn">${d.note}</span>` : ""}`;
+					fig.appendChild(hold);
+					fig.appendChild(cap);
+					wall.appendChild(fig);
+					frames.push(f);
+				}
+				fit();
+			}
+
+			// Scale every device by one factor so their sizes stay comparable, and
+			// pick the factor that makes the row fit the window.
+			function fit() {
+				const manual = Number($("#zoom").value) / 100;
+				const list = DEVICES.concat($("#tablets").checked ? TABLETS : []);
+				const pad = 20 + 18; // holder padding + gap
+				const totalW = list.reduce((n, d) => n + d.w + pad, 0);
+				const tallest = Math.max(...list.map((d) => d.h)) + 20;
+				const avail = window.innerWidth - 24;
+				const availH = window.innerHeight - 130;
+				const auto = Math.min(avail / totalW, availH / tallest, 1);
+				const s = auto * manual;
+				$("#zoomLabel").textContent = Math.round(s * 100) + "%";
+				document.querySelectorAll("figure").forEach((fig, i) => {
+					const d = list[i];
+					const hold = fig.querySelector(".holder");
+					hold.style.transform = `scale(${s})`;
+					// the scaled box no longer reserves its own space, so give it back
+					hold.style.marginRight = `${-(d.w + pad) * (1 - s)}px`;
+					hold.style.marginBottom = `${-(d.h + pad) * (1 - s)}px`;
+				});
+			}
+
+			// The toolbar never reaches into a frame. It posts a message to the lead
+			// phone, that phone changes its state and posts it back, and the parent
+			// relays it to every other phone. This is the only way that works from a
+			// file:// URL, where Chrome treats each frame as a stranger to its parent.
+			let latest = null; // last state JSON seen from any phone
+			let jumpOpts = null;
+			const post = (f, msg) => f?.contentWindow?.postMessage(msg, "*");
+			const drive = (act) => post(frames[0], { type: "sim", act });
+			const setIn = (sel, value, prop = "value") => post(frames[0], { type: "set", sel, value, prop });
+
+			window.addEventListener("message", (e) => {
+				const m = e.data || {};
+				if (m.type !== "state") return;
+				const from = frames.find((f) => f.contentWindow === e.source);
+				if (m.json !== latest) {
+					latest = m.json;
+					for (const f of frames) if (f !== from) post(f, { type: "state", json: m.json });
+				}
+				if (m.jump) jumpOpts = m.jump;
+				syncToolbar(m.screen); // every phone shows the same state, so any report is current
+			});
+
+			document.querySelectorAll("[data-sim]").forEach((b) => (b.onclick = () => drive(b.dataset.sim)));
+			document.querySelectorAll("[data-all]").forEach(
+				(b) =>
+					(b.onclick = () => {
+						if (b.dataset.all === "restart") {
+							try {
+								localStorage.removeItem("playerMock");
+								localStorage.removeItem("mockPerson");
+							} catch {}
+							latest = null;
+							frames.forEach((f) => (f.src = phoneSrc()));
+						} else drive("reset");
+					}),
+			);
+			$("#teamMode").onchange = (e) => setIn("#teamMode", e.target.value);
+			$("#liveToggle").onchange = (e) => setIn("#liveToggle", e.target.checked, "checked");
+			$("#ptsToggle").onchange = (e) => setIn("#ptsToggle", e.target.checked, "checked");
+			$("#jump").onchange = (e) => setIn("#jump", e.target.value);
+			const say = () => {
+				setIn("#sayInput", $("#sayInput").value);
+				drive("say");
+			};
+			$("#sayBtn").onclick = say;
+			$("#sayInput").addEventListener("keydown", (e) => e.key === "Enter" && say());
+			$("#zoom").oninput = fit;
+			const STRICT_KEY = "mockEgaStrict";
+			const FONT_KEY = "mockEgaFont";
+			$("#font").onchange = () => {
+				try {
+					localStorage.setItem(FONT_KEY, $("#font").value);
+				} catch {}
+				if (!$("#rbd").checked) $("#rbd").checked = true; // the type only differs in the skin
+				latest = null;
+				build();
+				setTimeout(() => frames.forEach((f) => post(f, { type: "hello?" })), 400);
+			};
+			$("#strict").onchange = () => {
+				try {
+					localStorage.setItem(STRICT_KEY, $("#strict").checked ? "1" : "0");
+				} catch {}
+				if (!$("#rbd").checked) $("#rbd").checked = true; // strict is a layer over the skin
+				latest = null;
+				build();
+				setTimeout(() => frames.forEach((f) => post(f, { type: "hello?" })), 400);
+			};
+			$("#rbd").onchange = () => {
+				try {
+					localStorage.setItem(RBD_KEY, $("#rbd").checked ? "1" : "0");
+				} catch {}
+				latest = null;
+				build();
+				setTimeout(() => frames.forEach((f) => post(f, { type: "hello?" })), 400);
+			};
+			$("#tablets").onchange = () => {
+				build();
+				setTimeout(() => frames.forEach((f) => post(f, { type: "hello?" })), 400);
+			};
+			window.addEventListener("resize", fit);
+
+			// Toolbar follows the lead phone's state. Never written while you have a
+			// control open: that cancelled the choice and looked like a dead toggle.
+			function syncToolbar(screen) {
+				let g = {};
+				try {
+					g = JSON.parse(latest || "{}");
+				} catch {}
+				const jump = $("#jump");
+				if (jumpOpts && jump.options.length !== jumpOpts.length) {
+					jump.innerHTML = "";
+					for (const o of jumpOpts) jump.add(new Option(o.text, o.value));
+				}
+				if (document.activeElement !== jump) jump.value = String(g.qi ?? -1);
+				const tm = $("#teamMode");
+				if (document.activeElement !== tm) tm.value = g.teamMode ?? "off";
+				$("#liveToggle").checked = !!g.live;
+				$("#ptsToggle").checked = !!g.showPts;
+				const random = (g.teamMode ?? "off") === "random";
+				$("#deal").disabled = !random;
+				$("#deal").title = random ? "" : "random mode only — in pick mode players choose";
+				const bits = [`screen: <b>${screen ?? "—"}</b>`, g.name ? `as ${g.name}` : "not joined"];
+				if (g.teamMode && g.teamMode !== "off") bits.push(g.team ? `team ${g.team}` : `${(g.teams || []).length} teams, none joined`);
+				if (!g.name) bits.push("<b>join first</b> — team and question screens need a name");
+				$("#stateLine").innerHTML = bits.join(" · ");
+			}
+			// The host's session settings own the type and the message; the wall follows.
+			window.addEventListener("storage", (e) => {
+				if (e.key !== FONT_KEY) return;
+				const want = e.newValue === "mono" ? "mono" : "scumm";
+				if ($("#font").value === want) return;
+				$("#font").value = want;
+				latest = null;
+				build();
+				setTimeout(() => frames.forEach((f) => post(f, { type: "hello?" })), 400);
+			});
+
+			try {
+				$("#rbd").checked = localStorage.getItem(RBD_KEY) === "1"; // agrees with the door
+				$("#strict").checked = localStorage.getItem(STRICT_KEY) === "1";
+				$("#font").value = localStorage.getItem(FONT_KEY) === "mono" ? "mono" : "scumm";
+			} catch {}
+			build();
+		</script>
+	</body>
+</html>

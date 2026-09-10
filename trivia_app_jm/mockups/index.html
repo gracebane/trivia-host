@@ -22,8 +22,10 @@
 			<p class="sub">Scan the code, or tap below</p>
 
 			<div class="row">
-				<a class="btn big" href="player.html?code=imstupid">Join as a player</a>
+				<a class="btn big" id="joinLink" href="devices.html">Join as a player</a>
 			</div>
+			<p class="note" id="shut" style="display: none">The room isn't open yet. The host will start it shortly.</p>
+			<p class="note" id="wallNote"></p>
 
 			<div class="qr">
 				<img id="qr" alt="QR to join" />
@@ -42,7 +44,47 @@
 			</div>
 		</div>
 
+		<!-- Mock host state — NOT part of the door. In the real app the server
+		     answers "is the room open" and this page asks it on load. -->
+		<div class="simbar">
+			<b>Simulate host</b> (mock only) &nbsp;
+			<label><input type="checkbox" id="openToggle" /> Room is open</label>
+			&nbsp; <label><input type="checkbox" id="rbdToggle" /> Birthday skin <span class="muted">— the wall opens rbd_player</span></label>
+		</div>
+
 		<script>
+			// The room gate. localStorage stands in for the server's answer, and is
+			// shared with the player page so the two agree in the mock.
+			const ROOM_KEY = "mockRoomOpen";
+			const roomOpen = () => {
+				try {
+					return localStorage.getItem(ROOM_KEY) === "1";
+				} catch {
+					return false;
+				}
+			};
+			const joinLink = document.getElementById("joinLink");
+			const openToggle = document.getElementById("openToggle");
+			function paintRoom() {
+				const open = roomOpen();
+				openToggle.checked = open;
+				joinLink.classList.toggle("disabled", !open);
+				joinLink.textContent = open ? "Join as a player" : "Room not open";
+				document.getElementById("shut").style.display = open ? "none" : "";
+			}
+			joinLink.addEventListener("click", (e) => {
+				if (!roomOpen()) e.preventDefault(); // the server would reject the JOIN anyway
+			});
+			openToggle.addEventListener("change", () => {
+				try {
+					localStorage.setItem(ROOM_KEY, openToggle.checked ? "1" : "0");
+				} catch {}
+				paintRoom();
+			});
+			// another tab (the player page) changing it repaints this one
+			window.addEventListener("storage", (e) => e.key === ROOM_KEY && paintRoom());
+			paintRoom();
+
 			// Hardcoded for now, per spec. The player password (imstupid) is the room
 			// identifier in the real app; the host passphrase is independent of it.
 			const HOST_PASSPHRASE = "imwithstupid";
@@ -93,8 +135,36 @@
 				enterHost();
 			});
 
-			// The QR encodes the player path with the lobby password embedded, so
-			// scanning skips the landing page entirely.
+			// Which phone the door opens: the plain one, or the Birthday Mode skin.
+			// Same app either way — rbd_player.html is generated from player.html.
+			const RBD_KEY = "mockRbdSkin";
+			const rbdOn = () => {
+				try {
+					return localStorage.getItem(RBD_KEY) === "1";
+				} catch {
+					return false;
+				}
+			};
+			const rbdToggle = document.getElementById("rbdToggle");
+			const $note = document.getElementById("wallNote");
+			const oneLink = { set href(v) {} }; // the link is rebuilt inside the note
+			function paintSkin() {
+				const on = rbdOn();
+				rbdToggle.checked = on;
+				oneLink.href = (on ? "rbd_player.html" : "player.html") + "?code=imstupid";
+				$note.innerHTML = `Opens the device wall — every screen size at once, ${on ? "in the <b>birthday skin</b>" : "in the plain skin"}. <a class="plain" id="oneLink" href="${on ? "rbd_player.html" : "player.html"}?code=imstupid">One phone only</a>`;
+			}
+			rbdToggle.addEventListener("change", () => {
+				try {
+					localStorage.setItem(RBD_KEY, rbdToggle.checked ? "1" : "0");
+				} catch {}
+				paintSkin();
+			});
+			window.addEventListener("storage", (e) => e.key === RBD_KEY && paintSkin());
+			paintSkin();
+
+			// The QR still encodes the single-phone path: something scanning this is a
+			// real phone and wants the app, not the wall of emulated ones.
 			const target = new URL("player.html?code=imstupid", location.href).href;
 			const qr = document.getElementById("qr");
 			qr.src = "https://api.qrserver.com/v1/create-qr-code/?size=150x150&data=" + encodeURIComponent(target);

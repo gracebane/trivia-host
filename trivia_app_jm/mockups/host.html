@@ -156,6 +156,31 @@
 					</table>
 				</div>
 
+				<!-- Teams: the scoring unit when the session says so. Captain answers;
+				     the rest of the team is pointed at the captain's phone. -->
+				<div class="teams-only">
+					<h2>Teams</h2>
+					<div class="toolbar">
+						<button id="rotateCaptains">New captains</button>
+						<button id="addTeam">+ Team</button>
+						<span class="muted" id="teamNote"></span>
+					</div>
+					<table class="grid">
+						<thead>
+							<tr>
+								<th>Rank</th>
+								<th>Team</th>
+								<th>Captain</th>
+								<th>Players</th>
+								<th class="scorecol">Score</th>
+								<th></th>
+							</tr>
+						</thead>
+						<tbody id="teamBody"></tbody>
+					</table>
+					<p class="note">Rename by editing the name. Captain is a pick, not a draw. Move a player with the dropdown by their name; a team left empty is removed. Score follows the team, so moving a player mid-game moves nothing they already earned.</p>
+				</div>
+
 				<h2>All known players <span class="muted">— D1 total player list, independent of any room</span></h2>
 				<div class="toolbar">
 					<label>Tag <select id="tagFilter"></select></label>
@@ -193,6 +218,40 @@
 						<div class="settingrow"><a class="btn" id="openBoard" href="leaderboard.html" target="_blank">Open leaderboard</a></div>
 						<div class="settingrow"><code id="boardUrl"></code></div>
 						<div class="settingrow muted">TV: Extend, not Duplicate</div>
+					</section>
+
+					<section class="panel">
+						<h2>Room</h2>
+						<div class="settingrow"><button id="openBtn"></button> <span class="muted" id="openHint"></span></div>
+					</section>
+
+					<section class="panel">
+						<h2>Teams</h2>
+						<div class="settingrow"><select id="teamMode" class="short">
+							<option value="off">Off</option>
+							<option value="pick">Players pick</option>
+							<option value="random">Random</option>
+						</select></div>
+						<div class="settingrow teams-only"><label>Max per team <input type="number" id="teamMax" min="2" max="10" class="short" /></label> <span class="muted">(random)</span></div>
+						<div class="settingrow teams-only"><label><input type="checkbox" id="rotateEachRound" /> Random captain every question</label></div>
+						<div class="settingrow teams-only"><button id="dealBtn">Deal teams</button> <span class="muted" id="dealHint"></span></div>
+					</section>
+
+					<section class="panel wide">
+						<h2>Phones</h2>
+						<div class="settingrow">
+							<label>Type <select id="egaFont" class="short">
+								<option value="scumm">SCUMM</option>
+								<option value="mono">DOS mono</option>
+							</select></label>
+							<span class="muted">Birthday Mode only</span>
+						</div>
+						<div class="settingrow">
+							<label>Message <input type="text" id="hostSay" placeholder="say something to every phone…" maxlength="120" /></label>
+							<button id="saySend">Send</button>
+							<button id="sayClear">Clear</button>
+						</div>
+						<div class="settingrow muted" id="sayNote"></div>
 					</section>
 
 					<section class="panel">
@@ -248,6 +307,8 @@
 			<button class="btn" data-sim="all">Everyone answers</button>
 			<button class="btn" data-sim="toggle">Toggle someone's connection</button>
 			<button class="btn" data-sim="joiner">Mid-game joiner</button>
+			<button class="btn teams-only" data-sim="stepdown">Captain steps down</button>
+			<button class="btn teams-only" data-sim="kick">Team vote-kicks captain</button>
 			<span class="muted" id="simNote"></span>
 		</div>
 		<div class="toast" id="toast"></div>
@@ -323,7 +384,7 @@
 			// Resubmission grants: per-player, only while the question is open.
 			const grants = new Set();
 
-			const settings = { autoPassFuzzy: false, showVerdictsLive: false, showScores: true, showPointsOnPhones: false, sharedRank: true, birthdayMode: false, defaultGuesses: 2, defaultSchedule: [8, 8], defaultAutograde: true, defaultThreshold: "auto", defaultKind: "single", defaultPointsPer: 2, defaultOrderX: false, defaultOrderY: false };
+			const settings = { teamMode: "off", teamMax: 4, rotateEachRound: false, autoPassFuzzy: false, showVerdictsLive: false, showScores: true, showPointsOnPhones: false, sharedRank: true, birthdayMode: false, defaultGuesses: 2, defaultSchedule: [8, 8], defaultAutograde: true, defaultThreshold: "auto", defaultKind: "single", defaultPointsPer: 2, defaultOrderX: false, defaultOrderY: false };
 			// Question kinds. `single` is one response judged against an answer key —
 			// everything the app did before this existed. `list` is several elements
 			// judged against a grid, scoring a fixed number of points per element.
@@ -383,7 +444,8 @@
 			// The most a question can pay: the whole grid for a list, the best guess for a single.
 			const maxPoints = (q) => (isList(q) ? listMax(q) : Math.max(...schedule(q)));
 			// phase ∈ lobby | collecting | revealing | ended.  cur = index into pack.questions.
-			const game = { phase: "lobby", cur: -1, before: null, evalQ: null, handoff: false };
+			// open: the room gate. Nobody joins until the host opens it; it can be shut again at any time.
+			const game = { phase: "lobby", cur: -1, before: null, evalQ: null, handoff: false, open: false };
 			let openSettings = null; // which tracker row has its settings expanded
 			pack.questions.forEach(normalizeQ); // the mock pack's bare numbers become schedules
 			// Deck reference material. thumbs = real renders keyed by slide number;
@@ -406,10 +468,182 @@
 			// authorId: null = unset (fall back to the name match), "none" = the host said nobody, else a personId.
 			const isAuthor = (q, pid) => bday() && (q.authorId ? q.authorId !== "none" && q.authorId === pid : !!q.author && normName(name(pid)) === normName(q.author));
 			const guessedAuthor = (q) => players.find((p) => q.author && normName(name(p.personId)) === normName(q.author))?.personId ?? null;
-			const eligible = (q) => players.filter((p) => !isAuthor(q, p.personId));
+			const eligible = (q) => units().filter((u) => !isAuthor(q, u.id));
 			// What a question is called in the UI: its author in birthday mode, its number otherwise.
 			const qLabel = (q, i) => (bday() && q.author ? q.author : String(i + 1));
 			const answerSlide = (q) => q.answerSlide ?? q.slide + 1;
+
+			// ---- Teams ----
+			// A team is the scoring unit when teams are on: it holds the guesses, the
+			// verdicts and the score. Only the captain's phone can submit for it.
+			// { id, name, members: [personId], captain: personId, votes: Set<personId> }
+			const teams = [];
+			let teamSeq = 0;
+			const teamsOn = () => settings.teamMode !== "off";
+			const teamOf = (pid) => teams.find((t) => t.members.includes(pid));
+			const teamById = (id) => teams.find((t) => t.id === id);
+			// The key a player's guesses are filed under: their team when teams are on, else themselves.
+			const unitOf = (pid) => (teamsOn() ? (teamOf(pid)?.id ?? null) : pid);
+			const isCaptain = (pid) => teamOf(pid)?.captain === pid;
+			const connected = (pid) => !!players.find((p) => p.personId === pid)?.connected;
+			// Who takes part in a question: teams, or players. Everything that folds
+			// over the log (outcome, stats, standings, the tracker) walks this list.
+			function units() {
+				if (!teamsOn()) return players.map((p) => ({ id: p.personId, label: name(p.personId), connected: p.connected }));
+				return teams.map((t) => ({ id: t.id, label: t.name, connected: t.members.some(connected), team: t }));
+			}
+			const unitName = (id) => (teamsOn() ? (teamById(id)?.name ?? id) : name(id));
+			const unassigned = () => players.filter((p) => !teamOf(p.personId));
+			const shuffle = (a) => a.map((v) => [Math.random(), v]).sort((x, y) => x[0] - y[0]).map((x) => x[1]);
+			function makeTeam(nm, pid) {
+				const t = { id: "t" + ++teamSeq, name: nm, members: [], captain: null, votes: new Set(), mutiny: false, mutinies: 0, crew: [] };
+				teams.push(t);
+				if (pid) joinTeam(t.id, pid);
+				return t;
+			}
+			// First in is captain: the one who named the team, or the first dealt in.
+			function joinTeam(teamId, pid) {
+				const t = teamById(teamId);
+				if (!t) return;
+				const old = teamOf(pid);
+				if (old) old.members = old.members.filter((x) => x !== pid);
+				t.members.push(pid);
+				if (!t.captain) t.captain = pid;
+			}
+			// A new captain at random, excluding whoever holds it now, preferring phones that are online.
+			function pickCaptain(t, exclude, from) {
+				const src = (from ?? t.members).filter((pid) => pid !== exclude);
+				const live = src.filter(connected);
+				const c = live.length ? live : src;
+				return c.length ? c[Math.floor(Math.random() * c.length)] : t.captain;
+			}
+			// A clean hand-over: the hat moves, no pirates.
+			function stepDown(teamId) {
+				const t = teamById(teamId);
+				if (!t || t.members.length < 2) return;
+				t.captain = pickCaptain(t, t.captain);
+				t.votes.clear();
+				t.mutiny = false;
+				t.mutinies = 0; // a clean hand-over resets the count, so the next uprising is red
+				t.crew = [];
+			}
+			// 50 % + 1 of the team, captain included in the count. The new captain is
+			// drawn from the voters, so nobody gets kicked into the job by their own vote.
+			function voteKick(teamId, pid) {
+				const t = teamById(teamId);
+				if (!t || pid === t.captain) return;
+				t.votes.has(pid) ? t.votes.delete(pid) : t.votes.add(pid);
+				if (t.votes.size >= votesNeeded(t)) {
+					const crew = [...t.votes];
+					t.captain = pickCaptain(t, t.captain, crew);
+					t.votes.clear();
+					t.mutiny = true; // the tricorn, and the crew keep their bandanas
+					t.mutinies = (t.mutinies || 0) + 1; // next one comes up the other colour
+					t.crew = crew;
+				}
+			}
+			// Where a latecomer goes once the teams exist: the smallest team, and at
+			// parity a random one of the smallest. Never "any team at random" — that
+			// is how one team ends up two players heavier than another.
+			function smallestTeam() {
+				if (!teams.length) return null;
+				const min = Math.min(...teams.map((t) => t.members.length));
+				const c = teams.filter((t) => t.members.length === min);
+				return c[Math.floor(Math.random() * c.length)];
+			}
+			// Max per team is a cap, not a target: when every team is full a latecomer
+			// starts a new one rather than making a team of five out of a max of four.
+			function placeLate(pid) {
+				const max = Math.max(2, Math.min(10, settings.teamMax || 4));
+				let t = smallestTeam();
+				if (!t || t.members.length >= max) t = makeTeam(`Team ${teams.length + 1}`);
+				joinTeam(t.id, pid);
+				return t;
+			}
+			// A team of one is not a team. Called at Start: fold a lone player into the
+			// smallest other team, even though that team then sits one over the max.
+			function absorbSingletons() {
+				for (const t of teams.slice()) {
+					if (t.members.length !== 1 || teams.length < 2) continue;
+					const pid = t.members[0];
+					teams.splice(teams.indexOf(t), 1);
+					joinTeam(smallestTeam().id, pid);
+				}
+			}
+			function movePlayer(pid, teamId) {
+				const old = teamOf(pid);
+				if (old) {
+					old.members = old.members.filter((x) => x !== pid);
+					old.votes.delete(pid);
+					if (old.captain === pid) old.captain = old.members[0] ?? null;
+					if (!old.members.length) teams.splice(teams.indexOf(old), 1); // an empty team is no team
+				}
+				if (teamId) joinTeam(teamId, pid);
+			}
+			function removeTeam(teamId) {
+				const t = teamById(teamId);
+				if (!t) return;
+				t.members.slice().forEach((pid) => movePlayer(pid, null)); // members go unassigned
+				const i = teams.indexOf(t);
+				if (i >= 0) teams.splice(i, 1);
+			}
+			const rotateCaptains = () => teams.forEach((t) => stepDown(t.id));
+			// Random mode: fill teams to the max, and the remainder is the small team
+			// (6 people at 4 → 4 + 2, not 3 + 3). A remainder of one is no team, so it
+			// borrows a player from a full one (9 at 4 → 4 + 3 + 2).
+			// What a deal would produce, without doing it — so the host can size it first.
+			function dealSizes(n) {
+				const max = Math.max(2, Math.min(10, settings.teamMax || 4));
+				const g = [];
+				for (let i = 0; i < n; i += max) g.push(Math.min(max, n - i));
+				if (g.length > 1 && g[g.length - 1] === 1) (g[g.length - 1]++, g[0]--);
+				return g;
+			}
+			const dealPreview = () => (players.length ? dealSizes(players.length).join(" + ") : "nobody yet");
+			function assignRandom() {
+				teams.length = 0;
+				const max = Math.max(2, Math.min(10, settings.teamMax || 4));
+				const order = shuffle(players);
+				const groups = [];
+				for (let i = 0; i < order.length; i += max) groups.push(order.slice(i, i + max));
+				if (groups.length > 1 && groups[groups.length - 1].length === 1) groups[groups.length - 1].push(groups[0].pop());
+				groups.forEach((g, i) => {
+					const t = makeTeam(`Team ${i + 1}`);
+					g.forEach((p) => joinTeam(t.id, p.personId));
+				});
+			}
+			// Mock stand-in for players picking: everyone unassigned lands somewhere.
+			const MOCK_TEAM_NAMES = ["Quizzards", "Sofa Kings", "Les Quizerables", "Norfolk & Chance"];
+			function mockPick() {
+				for (const p of unassigned()) {
+					const t = teams.length < 3 || Math.random() < 0.2 ? makeTeam(MOCK_TEAM_NAMES[teams.length % MOCK_TEAM_NAMES.length] + (teams.length >= MOCK_TEAM_NAMES.length ? " " + (teams.length + 1) : "")) : teams[Math.floor(Math.random() * teams.length)];
+					joinTeam(t.id, p.personId);
+				}
+			}
+			// Same headgear rule as the phones: plain hat = captain, vote against them
+			// or not; black tricorn = captain by mutiny; red bandana = voted. A player
+			// who did not vote wears nothing whichever way the vote went.
+			const ICON_W = { "hat-pirate": 25 };
+			const ICON = (kind, title) => {
+				const base = kind.replace(/-(red|green)$/, "");
+				return `<img class="hat ${base}" src="../assets/ega/hat/${kind}-${ICON_W[base] ?? 24}.png" alt="${title}" title="${title}" />`;
+			};
+			const HAT = ICON("hat-navy", "captain");
+			// Mutinies alternate colour: first red, second green, third red again.
+			const crewColour = (n) => (n % 2 === 1 ? "red" : "green");
+			const ORDINAL = ["", "first", "second", "third", "fourth", "fifth", "sixth", "seventh", "eighth"];
+			const nth = (n) => ORDINAL[n] ?? `${n}th`;
+			function headgear(t, pid) {
+				if (!t) return "";
+				const done = t.mutinies || 0;
+				if (pid === t.captain) return done ? ICON(`hat-pirate-${crewColour(done)}`, `captain by the ${nth(done)} mutiny`) : HAT;
+				if (t.votes.has(pid)) return ICON(`bandana-${crewColour(done + 1)}`, "voted to replace the captain");
+				if ((t.crew || []).includes(pid)) return ICON(`bandana-${crewColour(done)}`, `sailed with the ${nth(done)} mutiny`);
+				return `<span class="hatgap"></span>`;
+			}
+			// 50 % + 1, capped at the number of people allowed to vote: the captain
+			// cannot vote against themselves, so a team of two needs a single vote.
+			const votesNeeded = (t) => Math.min(Math.floor(t.members.length / 2) + 1, Math.max(1, t.members.length - 1));
 
 			// Host session. A stored token means no re-prompt on refresh; presenting the
 			// passphrase in the URL is equally sufficient (the battery-death path) and
@@ -456,8 +690,8 @@
 				const m = new Map();
 				for (const r of log) {
 					if (r.questionId !== qid || r.superseded) continue;
-					if (!m.has(r.personId)) m.set(r.personId, []);
-					m.get(r.personId).push(r);
+					if (!m.has(r.unitId)) m.set(r.unitId, []);
+					m.get(r.unitId).push(r);
 				}
 				for (const rows of m.values()) rows.sort((a, b) => a.guessNo - b.guessNo);
 				return m;
@@ -503,7 +737,7 @@
 
 			// The leaderboard fold: a question pays out if any of the person's guesses is confirmed correct.
 			function scores() {
-				const s = new Map(players.map((p) => [p.personId, 0]));
+				const s = new Map(units().map((u) => [u.id, 0]));
 				for (const q of pack.questions) {
 					for (const pid of guessesOf(q.id).keys()) {
 						const o = outcome(q.id, pid);
@@ -518,8 +752,8 @@
 			//   sharedRank off — tied players take the average of the ranks they cover: 1, 2.5, 2.5, 4
 			function standings() {
 				const s = scores();
-				const rows = players
-					.map((p) => ({ ...p, displayName: name(p.personId), score: s.get(p.personId) }))
+				const rows = units()
+					.map((u) => ({ ...u, personId: u.id, displayName: u.label, score: s.get(u.id), members: u.team ? u.team.members.map(name) : undefined, captain: u.team ? name(u.team.captain) : undefined }))
 					.sort((a, b) => b.score - a.score || a.displayName.localeCompare(b.displayName));
 				let i = 0;
 				while (i < rows.length) {
@@ -673,14 +907,17 @@
 			function submit(pid, kind) {
 				const q = curQ();
 				if (!q) return toast("No open question");
-				const mine = guessesOf(q.id).get(pid) ?? [];
+				const uid = unitOf(pid);
+				if (!uid) return toast(`Server would reject: ${name(pid)} is on no team`);
+				if (teamsOn() && !isCaptain(pid)) return toast(`Server would reject: ${name(pid)} is not the captain`);
+				const mine = guessesOf(q.id).get(uid) ?? [];
 				let guessNo;
-				if (grants.has(pid)) {
+				if (grants.has(uid)) {
 					// send-back: the latest guess is replaced, not added to
 					const last = mine[mine.length - 1];
 					if (last) last.superseded = true;
 					guessNo = last ? last.guessNo : 1;
-					grants.delete(pid);
+					grants.delete(uid);
 				} else if (game.phase === "collecting" && mine.length < allowedGuesses(q)) {
 					guessNo = mine.length + 1; // a further guess, within the question's allowance
 				} else {
@@ -690,7 +927,8 @@
 				log.push({
 					id: ++rowSeq,
 					questionId: q.id,
-					personId: pid,
+					personId: pid, // who typed it
+					unitId: uid, // who it counts for
 					guessNo,
 					deviceId: "dev-" + pid,
 					payload: { text },
@@ -705,10 +943,10 @@
 			// answer returns to the review queue, judgment untouched); while the
 			// question is still open it is also the resubmission grant — the player
 			// gets their textbox back. Once closed, only the un-confirm applies.
-			function sendBack(qid, pid) {
-				const r = liveRows(qid).get(pid); // the latest guess is the one that gets replaced
+			function sendBack(qid, uid) {
+				const r = liveRows(qid).get(uid); // the latest guess is the one that gets replaced
 				if (!r) return;
-				if (qid === curQ()?.id && game.phase === "collecting") grants.add(pid);
+				if (qid === curQ()?.id && game.phase === "collecting") grants.add(uid);
 				r.verdict.confirmed = false;
 				render();
 			}
@@ -772,6 +1010,23 @@
 			function next() {
 				if (game.phase === "collecting" || game.phase === "ended") return;
 				if (game.cur + 1 >= pack.questions.length) return toast("No more questions — End game when ready");
+				// Teams are dealt by the host from session settings, never implicitly here:
+				// a hand-adjusted arrangement must survive Start. Anyone still unassigned
+				// is placed by the same rule a latecomer gets.
+				if (teamsOn() && game.phase === "lobby" && teams.length) {
+					unassigned().forEach((p) => placeLate(p.personId));
+					absorbSingletons();
+				}
+				if (teamsOn() && settings.rotateEachRound && game.cur >= 0) rotateCaptains();
+				// a new question starts the crew clean: captains keep the job, the
+				// mutiny history and every bandana are wiped
+				if (teamsOn())
+					for (const t of teams) {
+						t.votes.clear();
+						t.crew = [];
+						t.mutiny = false;
+						t.mutinies = 0;
+					}
 				game.cur++;
 				game.phase = "collecting";
 				grants.clear();
@@ -809,6 +1064,7 @@
 			function render() {
 				document.body.classList.toggle("bday", bday());
 				document.body.classList.toggle("handoff", game.handoff);
+				document.body.classList.toggle("teams", teamsOn());
 				renderStatus();
 				renderTracker();
 				renderEvaluator();
@@ -823,12 +1079,13 @@
 				const n = pack.questions.length;
 				const connected = players.filter((p) => p.connected).length;
 				let s;
-				if (game.phase === "lobby") s = `Lobby · ${connected} of ${players.length} players connected · ${n} questions loaded${bday() ? " · <b>Reilly Birthday Mode</b>" : ""}`;
+				if (game.phase === "lobby")
+					s = `Lobby · <b>${game.open ? "room open" : "room closed — open it in session settings"}</b> · ${connected} of ${players.length} players connected${teamsOn() ? ` · ${teams.length} teams${unassigned().length ? `, ${unassigned().length} unassigned` : ""}` : ""} · ${n} questions loaded${bday() ? " · <b>Reilly Birthday Mode</b>" : ""}`;
 				else if (game.phase === "ended") s = `Game over — room frozen. Leaderboard still reachable; log archived to D1.`;
 				else {
 					const live = liveRows(q.id);
 					const pend = pendingItems(q.id).length;
-					const ok = eligible(q).filter((p) => { const o = outcome(q.id, p.personId); return o.state === "correct" && o.confirmed; }).length;
+					const ok = eligible(q).filter((u) => { const o = outcome(q.id, u.id); return o.state === "correct" && o.confirmed; }).length;
 					const who = bday() && q.author ? `${game.cur + 1} of ${n} · <b>${esc(q.author)}</b>` : `Q${game.cur + 1} of ${n}`;
 					s =
 						game.phase === "collecting"
@@ -841,7 +1098,7 @@
 				nextBtn.textContent = game.phase === "lobby" ? "Start game ›" : "Next question ›";
 				nextBtn.disabled = game.phase === "collecting" || game.phase === "ended" || game.cur + 1 >= n;
 				const closeBtn = $("#closeBtn");
-				const missing = q ? eligible(q).filter((p) => !liveRows(q.id).has(p.personId)).length : 0;
+				const missing = q ? eligible(q).filter((u) => !liveRows(q.id).has(u.id)).length : 0;
 				closeBtn.textContent = game.phase === "collecting" && missing ? `Close question (${missing} not answered → 0)` : "Close question";
 				closeBtn.disabled = game.phase !== "collecting";
 				$("#handoffClose").textContent = closeBtn.textContent;
@@ -1053,7 +1310,7 @@
 				// Stats strip: percentages are of players in the room, so "no answer"
 				// is visible as the gap. Correct counts confirmed-correct, same as the fold.
 				{
-					const people = eligible(q).map((p) => outcome(q.id, p.personId)).filter((o) => !o.none);
+					const people = eligible(q).map((u) => outcome(q.id, u.id)).filter((o) => !o.none);
 					const n = eligible(q).length;
 					const pct = (k) => (n ? Math.round((100 * k) / n) : 0);
 					const submitted = people.length;
@@ -1065,7 +1322,7 @@
 						tile("submitted", `${pct(submitted)}%`, `${submitted} of ${n}`) +
 						tile("correct", `${pct(correct)}%`, `${correct} of ${n}`) +
 						tile("incorrect", `${pct(incorrect)}%`, `${incorrect} of ${n}`) +
-						tile("players pending", pending) +
+						tile(teamsOn() ? "teams pending" : "players pending", pending) +
 						tile("no answer", n - submitted);
 				}
 
@@ -1093,7 +1350,7 @@
 							? `<span class="masked">hidden — hand the laptop over to read it</span>`
 							: esc(r.payload.text);
 					d.innerHTML = `<div class="guess">${headline}</div>
-						<div class="muted"><span class="dot ${dotCls} outline"></span><b>${esc(name(r.personId))}</b> · guess ${r.guessNo} of ${allowedGuesses(q)}${why ? ` · ${why}` : ""}</div>
+						<div class="muted"><span class="dot ${dotCls} outline"></span><b>${esc(unitName(r.unitId))}</b>${teamsOn() ? ` <span class="muted">(${esc(name(r.personId))})</span>` : ""} · guess ${r.guessNo} of ${allowedGuesses(q)}${why ? ` · ${why}` : ""}</div>
 						<div class="choices"></div>`;
 					const ch = d.querySelector(".choices");
 					if (isList(q)) {
@@ -1129,17 +1386,18 @@
 				// Submission tracker: every player, one column per allowed guess. Each
 				// guess carries its own ✓ ✗; the Outcome column is the fold over them.
 				const N = allowedGuesses(q);
-				$("#subHead").innerHTML = `<tr><th>Player</th>${Array.from({ length: N }, (_, k) => `<th>Guess ${k + 1}</th>`).join("")}<th>Send back</th><th>Outcome</th><th>Confirmed</th></tr>`;
+				$("#subHead").innerHTML = `<tr><th>${teamsOn() ? "Team" : "Player"}</th>${Array.from({ length: N }, (_, k) => `<th>Guess ${k + 1}</th>`).join("")}<th>Send back</th><th>Outcome</th><th>Confirmed</th></tr>`;
 				const tb = $("#subBody");
 				tb.innerHTML = "";
 				const byPerson = guessesOf(q.id);
-				const sorted = [...players].sort((a, b) => name(a.personId).localeCompare(name(b.personId)));
-				for (const p of sorted) {
+				const sorted = units().sort((a, b) => a.label.localeCompare(b.label));
+				for (const u of sorted) {
+					const p = { personId: u.id, connected: u.connected };
 					const mine = byPerson.get(p.personId) ?? [];
 					const tr = document.createElement("tr");
 					if (!p.connected) tr.className = "off";
 					if (isAuthor(q, p.personId)) {
-						tr.innerHTML = `<td>${esc(name(p.personId))}</td><td colspan="${N + 1}"><span class="muted">—</span></td><td><span class="dot"></span><span class="muted">author — grading this one, sits it out</span></td><td></td>`;
+						tr.innerHTML = `<td>${esc(u.label)}</td><td colspan="${N + 1}"><span class="muted">—</span></td><td><span class="dot"></span><span class="muted">author — grading this one, sits it out</span></td><td></td>`;
 						tb.appendChild(tr);
 						continue;
 					}
@@ -1150,7 +1408,7 @@
 					let cells = "";
 					for (let k = 1; k <= N; k++) {
 						const r = mine.find((x) => x.guessNo === k);
-						const replaced = log.filter((x) => x.questionId === q.id && x.personId === p.personId && x.superseded && x.guessNo === k);
+						const replaced = log.filter((x) => x.questionId === q.id && x.unitId === p.personId && x.superseded && x.guessNo === k);
 						if (!r) {
 							const expecting = k === mine.length + 1 && (open || sentBack);
 							cells += `<td class="gcell">${expecting ? `<span class="muted">waiting…</span>` : `<span class="muted">—</span>`}</td>`;
@@ -1189,7 +1447,8 @@
 						out = `<span class="dot ${cls}${o.confirmed ? "" : " outline"}"></span><span class="${cls ? "v-" + cls : "muted"}">${o.state ?? "ungraded"}</span>${which}`;
 						confirmed = o.confirmed ? `<span class="muted">confirmed</span>` : `<span class="v-pend">pending</span>`;
 					}
-					tr.innerHTML = `<td>${esc(name(p.personId))}${p.connected ? "" : ' <span class="muted">(offline)</span>'}</td>${cells}<td>${sb}</td><td>${out}</td><td>${confirmed}</td>`;
+					const who = u.team ? `${esc(u.label)}<div class="muted">${headgear(u.team, u.team.captain)} ${esc(name(u.team.captain))}</div>` : esc(u.label);
+					tr.innerHTML = `<td>${who}${p.connected ? "" : ' <span class="muted">(offline)</span>'}</td>${cells}<td>${sb}</td><td>${out}</td><td>${confirmed}</td>`;
 					tb.appendChild(tr);
 				}
 				tb.querySelectorAll("[data-sendback]").forEach((b) => (b.onclick = () => sendBack(q.id, b.dataset.sendback)));
@@ -1221,19 +1480,86 @@
 				);
 			}
 
+			function renderTeams() {
+				if (!teamsOn()) return;
+				const tb = $("#teamBody");
+				tb.innerHTML = "";
+				const lobby = game.phase === "lobby";
+				$("#teamNote").textContent = unassigned().length
+					? `Unassigned: ${unassigned().map((p) => name(p.personId)).join(", ")}`
+					: settings.teamMode === "random" && !teams.length
+						? "Deal them from session settings."
+						: "";
+				const teamOpts = (pid) =>
+					`<select class="short" data-move="${pid}" title="move to another team">${teams.map((t) => `<option value="${t.id}" ${teamOf(pid) === t ? "selected" : ""}>${esc(t.name)}</option>`).join("")}<option value="" ${teamOf(pid) ? "" : "selected"}>— none —</option></select>`;
+				for (const r of standings()) {
+					const t = r.team;
+					const tr = document.createElement("tr");
+					if (!r.connected) tr.className = "off";
+					const members = t.members
+						.map((pid) => `<div class="teammember ${connected(pid) ? "" : "muted"}">${headgear(t, pid)} ${esc(name(pid))} ${teamOpts(pid)}</div>`)
+						.join("");
+					const capSel = `${headgear(t, t.captain)} <select class="short" data-cap="${t.id}">${t.members.map((pid) => `<option value="${pid}" ${pid === t.captain ? "selected" : ""}>${esc(name(pid))}${connected(pid) ? "" : " (offline)"}</option>`).join("")}</select>`;
+					tr.innerHTML = `<td>${fmtRank(r.rank)}</td><td><input class="tags" type="text" data-rename="${t.id}" value="${esc(t.name)}" maxlength="24" /></td>
+						<td>${capSel}${t.votes.size ? `<div class="muted">${t.votes.size}/${votesNeeded(t)} voted <button class="mini" data-clearvotes="${t.id}">clear</button></div>` : ""}</td>
+						<td>${members}</td><td class="scorecol" ${settings.showScores ? "" : 'style="display:none"'}>${r.score}</td>
+						<td><button class="mini" data-recap="${t.id}" title="random new captain">random captain</button> <button class="mini" data-disband="${t.id}" title="members go unassigned">disband</button></td>`;
+					tb.appendChild(tr);
+				}
+				// unassigned players get a row of their own so they can be placed
+				if (unassigned().length) {
+					const tr = document.createElement("tr");
+					tr.innerHTML = `<td></td><td><span class="muted">unassigned</span></td><td></td><td>${unassigned().map((p) => `<div class="teammember"><span class="hatgap"></span> ${esc(name(p.personId))} ${teamOpts(p.personId)}</div>`).join("")}</td><td class="scorecol" ${settings.showScores ? "" : 'style="display:none"'}></td><td></td>`;
+					tb.appendChild(tr);
+				}
+				tb.querySelectorAll("[data-recap]").forEach((b) => (b.onclick = () => (stepDown(b.dataset.recap), render())));
+				tb.querySelectorAll("[data-disband]").forEach((b) => (b.onclick = () => (removeTeam(b.dataset.disband), render())));
+				tb.querySelectorAll("[data-clearvotes]").forEach((b) => (b.onclick = () => (teamById(b.dataset.clearvotes).votes.clear(), render())));
+				tb.querySelectorAll("[data-rename]").forEach((el) =>
+					el.addEventListener("change", () => {
+						const nm = el.value.trim();
+						if (nm) teamById(el.dataset.rename).name = nm;
+						render();
+					}),
+				);
+				tb.querySelectorAll("[data-cap]").forEach((el) =>
+					el.addEventListener("change", () => {
+						const t = teamById(el.dataset.cap);
+						t.captain = el.value;
+						t.votes.clear();
+						t.mutiny = false;
+						t.mutinies = 0;
+						t.crew = [];
+						render();
+					}),
+				);
+				tb.querySelectorAll("[data-move]").forEach((el) => el.addEventListener("change", () => (movePlayer(el.dataset.move, el.value || null), render())));
+			}
+
 			function renderPlayers() {
 				renderAuthors();
 				$("#tieNote").innerHTML = settings.sharedRank
 					? "Tied players share the better rank (1 · 2 · 2 · 4); change it in session settings. Rename / merge / delete / kick are the host identity panel — post-MVP, shown disabled."
 					: "Tied players take the average of the tied ranks (1 · 2.5 · 2.5 · 4); change it in session settings. Rename / merge / delete / kick are the host identity panel — post-MVP, shown disabled.";
+				renderTeams();
 				const tb = $("#roomBody");
 				tb.innerHTML = "";
 				document.querySelectorAll(".scorecol").forEach((el) => (el.style.display = settings.showScores ? "" : "none"));
-				for (const p of standings()) {
+				// With teams on, a player's rank and score are their team's.
+				const st = standings();
+				const rows = teamsOn()
+					? players.map((p) => {
+							const t = teamOf(p.personId);
+							const row = st.find((r) => r.personId === t?.id);
+							return { ...p, displayName: name(p.personId), rank: row?.rank ?? "—", score: row?.score ?? "—", team: t };
+						}).sort((a, b) => (a.team?.name ?? "~").localeCompare(b.team?.name ?? "~") || a.displayName.localeCompare(b.displayName))
+					: st;
+				for (const p of rows) {
 					const tr = document.createElement("tr");
 					if (!p.connected) tr.className = "off";
 					const joined = p.joinedAtQuestion == null ? "lobby" : `Q${p.joinedAtQuestion + 1}`;
-					tr.innerHTML = `<td>${fmtRank(p.rank)}</td><td>${esc(p.displayName)}</td><td class="scorecol" ${settings.showScores ? "" : 'style="display:none"'}>${p.score}</td><td>${joined}</td>
+					const teamCell = teamsOn() ? ` <span class="muted">· ${p.team ? esc(p.team.name) + " " + headgear(p.team, p.personId) : "no team"}</span>` : "";
+					tr.innerHTML = `<td>${typeof p.rank === "number" ? fmtRank(p.rank) : p.rank}</td><td>${esc(p.displayName)}${teamCell}</td><td class="scorecol" ${settings.showScores ? "" : 'style="display:none"'}>${p.score}</td><td>${joined}</td>
 						<td><span class="dot ${p.connected ? "ok" : ""}"></span>${p.connected ? "connected" : "disconnected"}</td>
 						<td><button class="mini" disabled title="post-MVP">rename</button><button class="mini" disabled title="post-MVP">merge</button><button class="mini" disabled title="post-MVP">delete</button><button class="mini" disabled title="post-MVP">kick</button></td>`;
 					tb.appendChild(tr);
@@ -1278,6 +1604,27 @@
 				$("#sharedRank").checked = settings.sharedRank;
 				$("#rankHint").textContent = settings.sharedRank ? "1 · 2 · 2 · 4" : "1 · 2.5 · 2.5 · 4";
 				$("#birthdayMode").checked = settings.birthdayMode;
+				const ob = $("#openBtn");
+				ob.textContent = game.open ? "Close room" : "Open room";
+				ob.className = game.open ? "" : "primary";
+				ob.disabled = game.phase === "ended";
+				$("#openHint").textContent = game.open ? "players can join" : "joins are rejected";
+				const db = $("#dealBtn");
+				db.disabled = settings.teamMode !== "random" || game.phase !== "lobby" || !players.length;
+				db.textContent = teams.length ? "Re-deal teams" : "Deal teams"; // no implicit first deal: this button is the only one
+				db.className = settings.teamMode === "random" && !teams.length && players.length && game.phase === "lobby" ? "primary" : "";
+				$("#dealHint").textContent =
+					settings.teamMode !== "random"
+						? "players pick their own"
+						: game.phase !== "lobby"
+							? "lobby only"
+							: teams.length
+								? "discards the current teams"
+								: `${players.length} players → ${dealPreview()}`;
+				$("#teamMode").value = settings.teamMode;
+				$("#teamMode").disabled = game.phase !== "lobby"; // the log is keyed by team once play starts
+				$("#teamMax").value = settings.teamMax;
+				$("#rotateEachRound").checked = settings.rotateEachRound;
 				$("#defaultGuesses").value = String(settings.defaultGuesses);
 				$("#defaultAutograde").checked = settings.defaultAutograde;
 				$("#defaultThreshold").value = settings.defaultThreshold;
@@ -1329,19 +1676,82 @@
 			function publishStandings() {
 				localStorage.setItem(
 					"mockStandings",
-					JSON.stringify({ standings: standings(), showScores: settings.showScores, phase: game.phase, q: game.cur + 1, total: pack.questions.length, at: Date.now() }),
+					JSON.stringify({ standings: standings(), teams: teamsOn(), showScores: settings.showScores, phase: game.phase, q: game.cur + 1, total: pack.questions.length, at: Date.now() }),
 				);
 			}
 
 			// ------------------------------------------------------------------
 			// Wiring
 			// ------------------------------------------------------------------
+			// The phones read these two keys directly. In the real app both ride the
+			// socket: the type is part of the session settings frame, the message is
+			// a push to every player.
+			const FONT_KEY = "mockEgaFont";
+			const SAY_KEY = "mockHostSay";
+			const store = (k, v) => {
+				try {
+					localStorage.setItem(k, v);
+				} catch {}
+			};
+			function paintSay() {
+				let cur = "";
+				try {
+					cur = localStorage.getItem(SAY_KEY) || "";
+				} catch {}
+				$("#sayNote").textContent = cur ? `On every phone now: “${cur}”` : "Nothing on the phones.";
+				$("#sayClear").disabled = !cur;
+			}
+			try {
+				$("#egaFont").value = localStorage.getItem(FONT_KEY) === "mono" ? "mono" : "scumm";
+			} catch {}
+			$("#egaFont").onchange = (e) => store(FONT_KEY, e.target.value);
+			$("#saySend").onclick = () => {
+				store(SAY_KEY, $("#hostSay").value.trim());
+				paintSay();
+			};
+			$("#sayClear").onclick = () => {
+				store(SAY_KEY, "");
+				$("#hostSay").value = "";
+				paintSay();
+			};
+			$("#hostSay").addEventListener("keydown", (e) => e.key === "Enter" && $("#saySend").click());
+			window.addEventListener("storage", (e) => (e.key === SAY_KEY || e.key === FONT_KEY) && paintSay());
+			paintSay();
+
 			$("#signOut").onclick = () => {
 				try {
 					localStorage.removeItem(TOKEN_KEY);
 				} catch {}
 			};
 			$("#handoffTop").onclick = enterHandoff;
+			$("#openBtn").onclick = () => {
+				game.open = !game.open;
+				toast(game.open ? "Room open — players can join" : "Room closed — joins rejected, players already in stay in");
+				render();
+			};
+			$("#dealBtn").onclick = () => {
+				assignRandom();
+				toast(`Dealt ${players.length} players into ${teams.length} teams · ${teams.map((t) => t.members.length).join(" + ")}`);
+				showTab("players");
+				render();
+			};
+			$("#rotateCaptains").onclick = () => (rotateCaptains(), render());
+			$("#addTeam").onclick = () => {
+				const t = makeTeam(`Team ${teams.length + 1}`);
+				toast(`${t.name} added — move players in with the dropdowns`);
+				render();
+			};
+			$("#teamMode").onchange = (e) => {
+				const was = settings.teamMode;
+				settings.teamMode = e.target.value;
+				// Changing the mode discards whatever the old one produced: picked teams
+				// are not a starting point for a deal, and vice versa.
+				if (settings.teamMode !== was) teams.length = 0;
+				if (settings.teamMode === "pick") (mockPick(), toast("Mock: players picked their teams"));
+				render();
+			};
+			$("#teamMax").onchange = (e) => ((settings.teamMax = Math.max(2, Math.min(10, Number(e.target.value) || 4))), render());
+			$("#rotateEachRound").onchange = (e) => ((settings.rotateEachRound = e.target.checked), render());
 			$("#nextBtn").onclick = next;
 			$("#closeBtn").onclick = closeQ;
 			$("#endBtn").onclick = endGame;
@@ -1746,11 +2156,14 @@
 				const q = curQ();
 				if (!q || game.phase === "ended") return [];
 				const by = guessesOf(q.id);
-				return eligible(q).filter((p) => p.connected && (grants.has(p.personId) || (game.phase === "collecting" && (by.get(p.personId)?.length ?? 0) < allowedGuesses(q))));
+				return eligible(q)
+					.filter((u) => u.connected && (grants.has(u.id) || (game.phase === "collecting" && (by.get(u.id)?.length ?? 0) < allowedGuesses(q))))
+					.map((u) => players.find((p) => p.personId === (u.team ? u.team.captain : u.id))) // the phone that can answer for it
+					.filter(Boolean);
 			}
 			function pickAnswerer() {
 				const c = pool();
-				const granted = c.filter((p) => grants.has(p.personId)); // a sent-back player answers first
+				const granted = c.filter((p) => grants.has(unitOf(p.personId))); // a sent-back player answers first
 				const src = granted.length ? granted : c;
 				return src.length ? src[Math.floor(Math.random() * src.length)] : null;
 			}
@@ -1773,10 +2186,31 @@
 						p.connected = !p.connected;
 						toast(`${name(p.personId)} ${p.connected ? "reconnected" : "dropped"} — cosmetic only`);
 						render();
+					} else if (act === "stepdown" || act === "kick") {
+						const t = teams.filter((x) => x.members.length > 1)[0] ? teams.filter((x) => x.members.length > 1)[Math.floor(Math.random() * teams.filter((x) => x.members.length > 1).length)] : null;
+						if (!t) return toast("No team big enough");
+						const was = name(t.captain);
+						if (act === "stepdown") stepDown(t.id);
+						else {
+							const voter = t.members.find((pid) => pid !== t.captain && !t.votes.has(pid));
+							if (!voter) return toast("Everyone has voted already");
+							voteKick(t.id, voter);
+							if (t.captain !== teamOf(voter).captain || t.votes.size) toast(`${name(voter)} voted to replace ${was} — ${t.votes.size}/${t.members.length}`);
+						}
+						if (name(t.captain) !== was) toast(`${t.name}: ${was} → ${name(t.captain)} is captain`);
+						render();
 					} else if (act === "joiner") {
+						if (!game.open) return toast("Server would reject: room is closed — open it from the strip");
 						const nxt = people.find((x) => !players.some((p) => p.personId === x.personId));
 						if (!nxt) return toast("Everyone known is already in");
 						addToLobby(nxt.personId);
+						// A latecomer in random mode is placed by protocol; in pick mode
+						// they choose on their phone (the mock stands that in as a pick).
+						if (teamsOn() && teams.length) {
+							const t = settings.teamMode === "pick" ? teams[Math.floor(Math.random() * teams.length)] : placeLate(nxt.personId);
+							if (settings.teamMode === "pick") joinTeam(t.id, nxt.personId);
+							if (t) toast(`${nxt.displayName} joined → ${t.name} (${t.members.length})`);
+						}
 						toast(`${nxt.displayName} joined${game.cur >= 0 ? ` at Q${game.cur + 1}` : ""} — earlier questions score 0`);
 						render();
 					}

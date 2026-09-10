@@ -185,6 +185,7 @@
 					<button class="mini" data-preset="warm">Warm bar photo</button>
 					<button class="mini" data-preset="crt">4:3 CRT</button>
 					<button class="mini" data-preset="flat">Flat / no dither</button>
+					<button class="mini" data-preset="portrait">Framed portrait</button>
 				</fieldset>
 
 				<fieldset>
@@ -201,6 +202,29 @@
 					<label class="row"><input type="radio" name="dither" value="none" /> None — flat posterise</label>
 					<label class="row"><span>Spread <b id="v-spread"></b></span><input type="range" id="spread" min="0" max="1" step="0.01" /></label>
 					<label class="row"><span>Matrix <b id="v-matrix"></b></span><input type="range" id="matrix" min="0" max="2" step="1" /></label>
+				</fieldset>
+
+				<fieldset>
+					<legend>Background</legend>
+					<label class="row"><span>Fill</span><select id="bg"></select></label>
+					<label class="row"><span>Colour</span><select id="bgA"></select></label>
+					<label class="row"><span>Second colour</span><select id="bgB"></select></label>
+					<p class="meta" id="bgNote" style="margin: 4px 0 0"></p>
+				</fieldset>
+
+				<fieldset>
+					<legend>Frame</legend>
+					<label class="row"><input type="checkbox" id="frame" /> Draw a frame</label>
+					<label class="row"><span>Style</span>
+						<select id="frameStyle">
+							<option value="mitre">Mitre — bevelled, 45° corners</option>
+							<option value="rope">Rope — twisted, pirate</option>
+							<option value="flat">Flat — plain band</option>
+						</select>
+					</label>
+					<label class="row"><span>Colour</span><select id="frameColor"></select></label>
+					<label class="row"><span>Thickness <b id="v-frameW"></b></span><input type="range" id="frameW" min="1" max="5" step="1" /></label>
+					<p class="meta" id="frameNote" style="margin: 4px 0 0"></p>
 				</fieldset>
 
 				<fieldset>
@@ -301,37 +325,44 @@
 				}
 				return out;
 			}
+			// Returns { rgb, a }. Colour is averaged weighted by alpha, so a cutout's
+			// transparent-black surround cannot drag the subject's edge toward black —
+			// that dark halo is the classic giveaway of a badly composited cutout.
 			function boxResize(src, sw, sh, tw, th) {
-				// horizontal pass: sw×sh RGBA → tw×sh RGB, rounded to 8-bit
+				// horizontal pass: sw×sh RGBA → tw×sh premultiplied RGB + A
 				const hx = boxCoeffs(sw, tw);
-				const mid = new Float32Array(tw * sh * 3);
+				const mid = new Float32Array(tw * sh * 4);
 				for (let y = 0; y < sh; y++)
 					for (let x = 0; x < tw; x++) {
 						const [lo, hi] = hx[x];
-						let r = 0, g = 0, b = 0;
+						let r = 0, g = 0, b = 0, a = 0;
 						for (let sx = lo; sx < hi; sx++) {
 							const i = (y * sw + sx) * 4;
-							r += src[i]; g += src[i + 1]; b += src[i + 2];
+							const w = src[i + 3] / 255;
+							r += src[i] * w; g += src[i + 1] * w; b += src[i + 2] * w; a += w;
 						}
-						const n = hi - lo, o = (y * tw + x) * 3;
-						mid[o] = Math.round(r / n); mid[o + 1] = Math.round(g / n); mid[o + 2] = Math.round(b / n);
+						const n = hi - lo, o = (y * tw + x) * 4;
+						mid[o] = r / n; mid[o + 1] = g / n; mid[o + 2] = b / n; mid[o + 3] = a / n;
 					}
-				// vertical pass: tw×sh → tw×th
+				// vertical pass, then unpremultiply back to plain RGB
 				const vy = boxCoeffs(sh, th);
-				const out = new Float32Array(tw * th * 3);
+				const rgb = new Float32Array(tw * th * 3), al = new Float32Array(tw * th);
 				for (let y = 0; y < th; y++) {
 					const [lo, hi] = vy[y], n = hi - lo;
 					for (let x = 0; x < tw; x++) {
-						let r = 0, g = 0, b = 0;
+						let r = 0, g = 0, b = 0, a = 0;
 						for (let sy = lo; sy < hi; sy++) {
-							const i = (sy * tw + x) * 3;
-							r += mid[i]; g += mid[i + 1]; b += mid[i + 2];
+							const i = (sy * tw + x) * 4;
+							r += mid[i]; g += mid[i + 1]; b += mid[i + 2]; a += mid[i + 3];
 						}
+						r /= n; g /= n; b /= n; a /= n;
 						const o = (y * tw + x) * 3;
-						out[o] = Math.round(r / n); out[o + 1] = Math.round(g / n); out[o + 2] = Math.round(b / n);
+						const inv = a > 0.002 ? 1 / a : 0;
+						rgb[o] = Math.round(r * inv); rgb[o + 1] = Math.round(g * inv); rgb[o + 2] = Math.round(b * inv);
+						al[y * tw + x] = a;
 					}
 				}
-				return out;
+				return { rgb, a: al };
 			}
 
 			// PIL ImageEnhance semantics: blend toward black (brightness), toward a
@@ -405,20 +436,163 @@
 			}
 
 			// ---------------------------------------------------------------
+			// Background. EGA has no alpha, so a transparent PNG has to become
+			// something. Every pattern below is two palette colours arranged on the
+			// native grid — the way an EGA artist faked a third colour, a texture or
+			// a gradient with only sixteen to hand.
+			// ---------------------------------------------------------------
+			const BG_PATTERNS = {
+				none: "Keep transparent",
+				solid: "Solid",
+				checker: "Checkerboard — 50%",
+				coarse: "Checkerboard — coarse",
+				dots: "Dots — 25%",
+				sparse: "Dots — sparse",
+				hstripes: "Stripes — horizontal",
+				vstripes: "Stripes — vertical",
+				diag: "Stripes — diagonal",
+				brick: "Brick wall",
+				gradient: "Gradient — dithered, top to bottom",
+				stars: "Starfield",
+			};
+			// 4×4 Bayer, for the dithered gradient
+			const BAYER4 = [
+				[0, 8, 2, 10],
+				[12, 4, 14, 6],
+				[3, 11, 1, 9],
+				[15, 7, 13, 5],
+			];
+			// → true where the SECOND colour shows
+			function bgSecond(kind, x, y, w, h) {
+				switch (kind) {
+					case "checker": return ((x + y) & 1) === 1;
+					case "coarse": return (((x >> 1) + (y >> 1)) & 1) === 1;
+					case "dots": return (x & 1) === 0 && (y & 1) === 0;
+					case "sparse": return (x & 3) === 0 && (y & 3) === 0;
+					case "hstripes": return (y & 3) < 2;
+					case "vstripes": return (x & 3) < 2;
+					case "diag": return ((x + y) & 7) < 4;
+					case "brick": {
+						const row = (y / 6) | 0, off = (row & 1) * 6;
+						return y % 6 === 0 || (x + off) % 12 === 0; // mortar lines
+					}
+					case "stars": {
+						const n = (x * 73856093) ^ (y * 19349663);
+						return (n & 127) === 0; // sparse deterministic scatter
+					}
+					case "gradient": {
+						const t = h > 1 ? y / (h - 1) : 0;
+						return BAYER4[y & 3][x & 3] / 16 < t;
+					}
+					default: return false; // solid
+				}
+			}
+			const bgIndexAt = (x, y, w, h) => (bgSecond(opts.bg, x, y, w, h) ? opts.bgB : opts.bgA);
+
+			// ---------------------------------------------------------------
+			// Frame. Drawn in NATIVE pixels, before the upscale, so one frame pixel
+			// is always exactly one picture pixel. Nothing is ever stretched: change
+			// the width and the frame is redrawn on the new grid from the same recipe.
+			// ---------------------------------------------------------------
+			// Each ramp is [lit, face, shade] — EGA has no dark purple or dark brown,
+			// so the shade slot borrows the nearest darker hue, the way EGA art did.
+			const RAMPS = {
+				purple: { name: "Purple (Monkey Island night)", lit: 13, face: 5, shade: 1 },
+				grey: { name: "Grey (system panel)", lit: 15, face: 7, shade: 8 },
+				wood: { name: "Wood (Scumm Bar)", lit: 14, face: 6, shade: 4 },
+				green: { name: "Green (jungle)", lit: 10, face: 2, shade: 8 },
+				blue: { name: "Blue (sea)", lit: 11, face: 3, shade: 1 },
+				red: { name: "Red (blood)", lit: 12, face: 4, shade: 8 },
+				black: { name: "Black (plain)", lit: 8, face: 0, shade: 0 },
+			};
+			// One band recipe per thickness step, outside → in, in native pixels.
+			const BAND_SETS = [
+				[["K", 1], ["outer", 1], ["face", 1], ["K", 1]],
+				[["K", 1], ["outer", 1], ["face", 2], ["inner", 1], ["K", 1]],
+				[["K", 1], ["outer", 1], ["face", 3], ["inner", 1], ["K", 1]],
+				[["K", 1], ["outer", 2], ["face", 5], ["inner", 2], ["K", 1]],
+				[["K", 1], ["outer", 3], ["face", 8], ["inner", 3], ["K", 1]],
+			];
+			const frameBands = () => BAND_SETS[Math.min(BAND_SETS.length, Math.max(1, opts.frameW)) - 1];
+			const frameThickness = () => frameBands().reduce((n, b) => n + b[1], 0) + FRAME_INSET;
+			const FRAME_INSET = 1; // native pixels of black between the picture and the frame
+
+			function segDist(px, py, ax, ay, bx, by) {
+				const dx = bx - ax, dy = by - ay;
+				const t = Math.max(0, Math.min(1, ((px - ax) * dx + (py - ay) * dy) / (dx * dx + dy * dy)));
+				return Math.hypot(px - (ax + t * dx), py - (ay + t * dy));
+			}
+
+			// idx: palette indices for the w×h picture. Returns a bigger index array with
+			// the frame around it, plus its new size.
+			function addFrame(idx, op, w, h) {
+				const bands = frameBands(), T = bands.reduce((n, b) => n + b[1], 0), ins = FRAME_INSET;
+				const ow = w + 2 * (T + ins), oh = h + 2 * (T + ins);
+				const r = RAMPS[opts.frameColor] ?? RAMPS.purple;
+				const out = new Uint8Array(ow * oh), outOp = new Uint8Array(ow * oh).fill(1); // the frame itself is always opaque
+				const edges = [[0, 0, ow - 1, 0, 1], [ow - 1, 0, ow - 1, oh - 1, 0], [ow - 1, oh - 1, 0, oh - 1, 0], [0, oh - 1, 0, 0, 1]];
+				const ix0 = T + ins, iy0 = T + ins, ix1 = ix0 + w, iy1 = iy0 + h;
+				const bandAt = (d) => {
+					let acc = 0;
+					for (const [nm, wd] of bands) { acc += wd; if (d < acc) return nm; }
+					return "face";
+				};
+				for (let y = 0; y < oh; y++) {
+					for (let x = 0; x < ow; x++) {
+						if (y >= iy0 && y < iy1 && x >= ix0 && x < ix1) {
+							out[y * ow + x] = idx[(y - iy0) * w + (x - ix0)];
+							outOp[y * ow + x] = op[(y - iy0) * w + (x - ix0)];
+							continue;
+						}
+						// distance to each outer edge, and whether the nearest one faces the light
+						let dOut = Infinity, lit = false, d2 = Infinity;
+						for (const [ax, ay, bx, by, isLit] of edges) {
+							const d = segDist(x, y, ax, ay, bx, by);
+							if (d < dOut) { d2 = dOut; dOut = d; lit = !!isLit; } else if (d < d2) d2 = d;
+						}
+						const dIn = Math.max(ix0 - x, iy0 - y, x - (ix1 - 1), y - (iy1 - 1), 0);
+						if (dIn > 0 && dIn <= ins) { out[y * ow + x] = 0; continue; } // black inset
+						if (opts.frameStyle === "rope") {
+							const p = (x + y) % 12;
+							out[y * ow + x] = dOut < 1 || dIn - ins < 1 ? 0 : p < 2 ? r.lit : p === 6 ? 0 : p === 10 ? r.lit : r.face;
+							continue;
+						}
+						if (opts.frameStyle === "flat") {
+							out[y * ow + x] = dOut < 1 || dIn - ins < 1 ? 0 : r.face;
+							continue;
+						}
+						// mitre: lit outer slope, flat face, inner slope reversed so the picture recedes
+						const bo = bandAt(dOut), bi = dIn > ins ? bandAt(dIn - ins) : "face";
+						const litIn = iy0 - y >= ix0 - x && iy0 - y >= x - (ix1 - 1) && iy0 - y >= y - (iy1 - 1) ||
+							ix0 - x >= iy0 - y && ix0 - x >= x - (ix1 - 1) && ix0 - x >= y - (iy1 - 1);
+						let c;
+						if (dOut <= dIn - ins) c = bo === "K" ? 0 : bo === "outer" ? (lit ? r.lit : r.shade) : r.face;
+						else c = bi === "K" ? 0 : bi === "inner" ? (litIn ? r.shade : r.lit) : r.face;
+						// black seam where two outer edges are equally near — the 45° mitre joint
+						if (d2 - dOut < 0.75 && dOut < T - 1) c = 0;
+						out[y * ow + x] = c;
+					}
+				}
+				return { idx: out, op: outOp, w: ow, h: oh };
+			}
+
+			// ---------------------------------------------------------------
 			// Wiring
 			// ---------------------------------------------------------------
 			const $ = (s) => document.querySelector(s);
 			const MATRICES = [2, 4, 8];
-			const DEFAULTS = { width: 320, scale: 3, aspect: false, dither: "ordered", spread: 0.35, matrix: 8, bright: 1, contrast: 1, sat: 1 };
+			const DEFAULTS = { width: 320, scale: 3, aspect: false, dither: "ordered", spread: 0.35, matrix: 8, bright: 1, contrast: 1, sat: 1, bg: "none", bgA: 0, bgB: 8, frame: false, frameStyle: "mitre", frameColor: "purple", frameW: 3 };
 			const PRESETS = {
 				default: DEFAULTS,
 				warm: { ...DEFAULTS, sat: 1.6, contrast: 1.15, spread: 0.22, matrix: 4 },
 				crt: { ...DEFAULTS, aspect: true, matrix: 4, sat: 1.2 },
 				flat: { ...DEFAULTS, dither: "none", sat: 1.3, contrast: 1.1 },
+				portrait: { ...DEFAULTS, width: 160, scale: 4, sat: 1.4, contrast: 1.1, frame: true, bg: "gradient", bgA: 1, bgB: 0 },
 			};
 			let opts = { ...DEFAULTS };
 			let source = null; // { name, w, h, data }  full-size pixels
-			let base = null; // downscaled Float32 RGB, cached until width/aspect changes
+			let hasAlpha = false; // does the picture have transparent areas at all?
+			let base = null, baseA = null; // downscaled RGB + alpha, cached until width/aspect changes
 			let baseKey = "";
 
 			function readControls() {
@@ -432,6 +606,13 @@
 					bright: +$("#bright").value,
 					contrast: +$("#contrast").value,
 					sat: +$("#sat").value,
+					bg: $("#bg").value,
+					bgA: +$("#bgA").value,
+					bgB: +$("#bgB").value,
+					frame: $("#frame").checked,
+					frameStyle: $("#frameStyle").value,
+					frameColor: $("#frameColor").value,
+					frameW: +$("#frameW").value,
 				};
 			}
 			function writeControls() {
@@ -444,6 +625,13 @@
 				$("#bright").value = opts.bright;
 				$("#contrast").value = opts.contrast;
 				$("#sat").value = opts.sat;
+				$("#bg").value = opts.bg;
+				$("#bgA").value = String(opts.bgA);
+				$("#bgB").value = String(opts.bgB);
+				$("#frame").checked = opts.frame;
+				$("#frameStyle").value = opts.frameStyle;
+				$("#frameColor").value = opts.frameColor;
+				$("#frameW").value = opts.frameW;
 			}
 			function labels() {
 				$("#v-width").textContent = opts.width + " px";
@@ -456,6 +644,25 @@
 				const ordered = opts.dither === "ordered";
 				$("#spread").disabled = !ordered;
 				$("#matrix").disabled = !ordered;
+				// the frame's size is fixed in NATIVE pixels, so what it looks like on
+				// screen follows the upscale — that's the point, and worth saying
+				// the background only means anything if the picture has transparent areas
+				const solid = opts.bg === "solid", none = opts.bg === "none";
+				$("#bgA").disabled = none;
+				$("#bgB").disabled = none || solid;
+				$("#bgNote").textContent = !source
+					? ""
+					: !hasAlpha
+						? "This image has no transparent areas, so the background never shows."
+						: none
+							? "Transparent areas stay transparent in the saved PNG."
+							: "";
+				const T = frameThickness();
+				$("#v-frameW").textContent = `${T} px`;
+				for (const id of ["frameStyle", "frameColor", "frameW"]) $("#" + id).disabled = !opts.frame;
+				$("#frameNote").textContent = opts.frame
+					? `${T} native px each side → ${T * opts.scale} px on screen at ×${opts.scale}. Redrawn, never stretched.`
+					: "";
 			}
 
 			function render() {
@@ -466,29 +673,43 @@
 				const h = Math.max(1, Math.round((source.h * w) / source.w * (opts.aspect ? 5 / 6 : 1)));
 				const key = `${w}x${h}`;
 				if (key !== baseKey) {
-					base = boxResize(source.data, source.w, source.h, w, h);
+					const r = boxResize(source.data, source.w, source.h, w, h);
+					base = r.rgb; baseA = r.a;
 					baseKey = key;
 				}
 				const px = enhance(Float32Array.from(base), opts.bright, opts.contrast, opts.sat);
 				const t0 = performance.now();
-				const idx = quantise(px, w, h, opts);
+				let idx = quantise(px, w, h, opts);
+				let nw = w, nh = h;
+				// EGA has no alpha: the soft edge becomes a hard one at 50%
+				let op = new Uint8Array(w * h);
+				for (let i = 0; i < w * h; i++) op[i] = baseA[i] >= 0.5 ? 1 : 0;
+				if (opts.bg !== "none") {
+					for (let y = 0; y < h; y++)
+						for (let x = 0; x < w; x++) {
+							const i = y * w + x;
+							if (!op[i]) { idx[i] = bgIndexAt(x, y, w, h); op[i] = 1; }
+						}
+				}
+				// the frame joins the picture while both are still native pixels
+				if (opts.frame) ({ idx, op, w: nw, h: nh } = addFrame(idx, op, w, h));
 				const ms = Math.round(performance.now() - t0);
 
 				// paint at native pixel size, then let CSS/canvas scale with hard edges
 				const small = document.createElement("canvas");
-				small.width = w; small.height = h;
+				small.width = nw; small.height = nh;
 				const sctx = small.getContext("2d");
-				const img = sctx.createImageData(w, h);
+				const img = sctx.createImageData(nw, nh);
 				const used = new Set();
-				for (let i = 0; i < w * h; i++) {
+				for (let i = 0; i < nw * nh; i++) {
 					const c = EGA[idx[i]];
-					used.add(idx[i]);
-					img.data[i * 4] = c[0]; img.data[i * 4 + 1] = c[1]; img.data[i * 4 + 2] = c[2]; img.data[i * 4 + 3] = 255;
+					if (op[i]) used.add(idx[i]);
+					img.data[i * 4] = c[0]; img.data[i * 4 + 1] = c[1]; img.data[i * 4 + 2] = c[2]; img.data[i * 4 + 3] = op[i] ? 255 : 0;
 				}
 				sctx.putImageData(img, 0, 0);
 
-				const outW = w * opts.scale;
-				const outH = Math.round(h * opts.scale * (opts.aspect ? 6 / 5 : 1));
+				const outW = nw * opts.scale;
+				const outH = Math.round(nh * opts.scale * (opts.aspect ? 6 / 5 : 1));
 				const out = $("#out");
 				out.width = outW; out.height = outH;
 				const octx = out.getContext("2d");
@@ -500,7 +721,7 @@
 				const k = Math.min(1, maxW / outW, maxH / outH);
 				out.style.width = Math.round(outW * k) + "px";
 
-				$("#outCap").textContent = `EGA output — ${outW}×${outH} (${w}×${h} native)`;
+				$("#outCap").textContent = `EGA output — ${outW}×${outH} (${nw}×${nh} native)`;
 				$("#status").textContent = `${source.name} · ${source.w}×${source.h} → ${w}×${h} · ${used.size} of 16 colours · ${ms} ms`;
 				$("#save").disabled = false;
 				document.querySelectorAll(".sw").forEach((el, i) => el.classList.toggle("off", !used.has(i)));
@@ -519,6 +740,17 @@
 				if (opts.bright !== d.bright) f.push(`--bright ${opts.bright}`);
 				if (opts.contrast !== d.contrast) f.push(`--contrast ${opts.contrast}`);
 				if (opts.sat !== d.sat) f.push(`--sat ${opts.sat}`);
+				if (opts.bg !== d.bg) {
+					f.push(`--bg ${opts.bg}`);
+					if (opts.bgA !== d.bgA) f.push(`--bg-a ${opts.bgA}`);
+					if (opts.bgB !== d.bgB && opts.bg !== "solid") f.push(`--bg-b ${opts.bgB}`);
+				}
+				if (opts.frame) {
+					f.push("--frame");
+					if (opts.frameStyle !== d.frameStyle) f.push(`--frame-style ${opts.frameStyle}`);
+					if (opts.frameColor !== d.frameColor) f.push(`--frame-color ${opts.frameColor}`);
+					if (opts.frameW !== d.frameW) f.push(`--frame-width ${opts.frameW}`);
+				}
 				const name = source ? source.name : "photo.jpg";
 				$("#cli").textContent = `python3 assets/ega.py assets/originals/${name}${f.length ? " " + f.join(" ") : ""}`;
 			}
@@ -535,6 +767,8 @@
 						const ctx = c.getContext("2d", { willReadFrequently: true });
 						ctx.drawImage(im, 0, 0);
 						source = { name: file.name, w: c.width, h: c.height, data: ctx.getImageData(0, 0, c.width, c.height).data };
+						hasAlpha = false;
+						for (let i = 3; i < source.data.length; i += 4) if (source.data[i] < 250) { hasAlpha = true; break; }
 						baseKey = "";
 						$("#orig").src = fr.result;
 						render();
@@ -545,12 +779,21 @@
 				fr.readAsDataURL(file);
 			}
 
+			// background pickers
+			$("#bg").innerHTML = Object.entries(BG_PATTERNS).map(([k, v]) => `<option value="${k}">${v}</option>`).join("");
+			const swatchOptions = EGA.map((c, i) => `<option value="${i}">${i} · ${NAMES[i]}</option>`).join("");
+			$("#bgA").innerHTML = swatchOptions;
+			$("#bgB").innerHTML = swatchOptions;
+
+			// frame colour picker
+			$("#frameColor").innerHTML = Object.entries(RAMPS).map(([k, r]) => `<option value="${k}">${r.name}</option>`).join("");
+
 			// palette swatches
 			$("#swatches").innerHTML = EGA.map((c, i) => `<div class="sw off" style="background: rgb(${c.join(",")})" title="${i} ${NAMES[i]}"></div>`).join("");
 
-			for (const el of document.querySelectorAll("input")) {
+			for (const el of document.querySelectorAll("input, select")) {
 				if (el.type === "file") continue;
-				el.addEventListener("input", () => { readControls(); save(); render(); });
+				for (const ev of ["input", "change"]) el.addEventListener(ev, () => { readControls(); save(); render(); });
 			}
 			$("#file").addEventListener("change", (e) => e.target.files[0] && load(e.target.files[0]));
 			const drop = $("#drop");

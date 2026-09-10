@@ -1,0 +1,398 @@
+/* =====================================================================
+   Reilly Birthday Mode — STRICT EGA. Layered over rbd.css, on when <body>
+   also carries the `strict` class. Toggle it from the device wall.
+
+   The first skin got the palette and the shapes right. This one fixes the
+   things that still read as "a modern page painted blue", in order of how
+   much they matter:
+
+   1. TEXT ON THE PIXEL GRID. The SCUMM faces are FontStruct rebuilds on a
+      16-bricks-per-em grid (the filled dialogue face is 8). A brick is one
+      whole pixel only at 16px, 32px, 48px. The first skin used 15, 18 and
+      26, so every glyph straddled pixels and went soft. Only two sizes
+      exist here: 16 (1px bricks) and 32 (2px bricks). There is no small
+      text: EGA games had one size per face, and so does this.
+
+   2. VERBS, NOT BUTTONS. Monkey Island's controls were coloured words on
+      black, no border, no bevel; the highlight was a colour change, green
+      to yellow. The bevelled box-shadow buttons in the first skin are
+      Windows 3.1, not SCUMM. Buttons here are black blocks (a touch target
+      has to exist on a phone) with green text that turns yellow when
+      pressed or selected.
+
+   3. NO ANTI-ALIASED CHROME. Focus rings, selection highlights and rules
+      are all hard-edged EGA colours. Dividers are 2px dotted lines built
+      from a repeating gradient, which is how a 320x200 game drew a rule.
+
+   4. EVERYTHING ON A 2PX GRID. Paddings and gaps are multiples of 2, so
+      nothing ever sits on a half pixel at 1x.
+
+   5. THE PALETTE COMES FROM THE PORTRAIT. Counted pixel by pixel, Reilly
+      is bright blue (33 %), bright magenta (17 %), deep blue (14 %), white
+      and grey, in a black-and-magenta frame. He has almost no green, yellow
+      or cyan. The first skin's ground was his jacket's deep blue, so he
+      sank into it, and its accents were the three colours he lacks, so
+      they looked bolted on. Here the ground is BLACK (the frame's own
+      colour, and the SCUMM verb area), the voice is his bright magenta,
+      the controls are his bright blue, and text is white over grey the way
+      his dithered skin is. Green and red survive only where they mean
+      something: correct, incorrect, mutiny.
+   ===================================================================== */
+
+/* ---- 1. sizes on the grid: 16 or 32, nothing else ---- */
+body.rbd.strict .screen {
+	font-size: 16px;
+	line-height: 20px; /* 1.25 em, whole pixels */
+	padding: 12px 16px 16px;
+}
+body.rbd.strict .muted,
+body.rbd.strict .qnum,
+body.rbd.strict .topbar,
+body.rbd.strict .roster li,
+body.rbd.strict .roster.small li,
+body.rbd.strict #mutinyPanel p,
+body.rbd.strict .mut-head,
+body.rbd.strict .teamcard .muted,
+body.rbd.strict .guessrow,
+body.rbd.strict .guessrow .ord,
+body.rbd.strict input,
+body.rbd.strict select,
+body.rbd.strict .answer {
+	font-size: 16px;
+	line-height: 20px;
+}
+body.rbd.strict h1 {
+	font-size: 32px;
+	line-height: 36px;
+	letter-spacing: 0; /* the face carries its own spacing; adding more breaks the grid */
+	text-shadow: 2px 2px 0 var(--ega-black);
+	margin: 0 0 8px;
+}
+body.rbd.strict .say {
+	font-family: "SCUMM Outline", "SCUMM Solid", ui-monospace, monospace;
+	font-size: 32px; /* 2px bricks: the outline strokes survive */
+	line-height: 36px;
+	min-height: 72px; /* two lines held open */
+	margin: 0 0 8px;
+	padding: 0;
+}
+body.rbd.strict .qnum {
+	letter-spacing: 0;
+	text-transform: none;
+}
+body.rbd.strict .topbar {
+	letter-spacing: 0;
+	padding: 6px 12px;
+	margin: -12px -16px 12px;
+}
+
+/* ---- 2. verbs: black block, green word, yellow when live ---- */
+body.rbd.strict button,
+body.rbd.strict .btn {
+	font-family: "SCUMM Solid", ui-monospace, monospace;
+	font-size: 16px;
+	line-height: 20px;
+	letter-spacing: 0;
+	text-transform: none;
+	border-radius: 0;
+	box-shadow: none;
+	padding: 6px 12px;
+}
+body.rbd.strict button:hover:not(:disabled),
+body.rbd.strict button:active:not(:disabled),
+body.rbd.strict button.on,
+body.rbd.strict button.primary {
+	box-shadow: none;
+}
+body.rbd.strict button:disabled {
+}
+body.rbd.strict .choice button.on {
+}
+
+/* ---- 3. hard-edged chrome ---- */
+body.rbd.strict :focus {
+	outline: none;
+}
+body.rbd.strict :focus-visible,
+body.rbd.strict input:focus,
+body.rbd.strict select:focus {
+	outline-offset: 0;
+	box-shadow: none;
+}
+body.rbd.strict ::selection {
+}
+body.rbd.strict input[type="text"],
+body.rbd.strict select,
+body.rbd.strict .answer {
+	border-radius: 0;
+	padding: 6px 8px;
+}
+body.rbd.strict input::placeholder {
+}
+/* the dotted rule: 2 on, 2 off, the only way a 320x200 game ever drew a line */
+body.rbd.strict .roster li,
+body.rbd.strict .guessrow,
+body.rbd.strict #crewlist li {
+	border-bottom: none;
+	background-image: repeating-linear-gradient(90deg, var(--ega-dark) 0 2px, transparent 2px 4px);
+	background-size: 100% 2px;
+	background-position: 0 100%;
+	background-repeat: no-repeat;
+	padding: 4px 8px 6px;
+}
+
+/* ---- 4. the 2px grid ---- */
+body.rbd.strict .state {
+	gap: 12px;
+}
+body.rbd.strict .teamgrid {
+	gap: 8px;
+}
+body.rbd.strict .teamcard {
+	border-width: 2px;
+	padding: 8px;
+	min-height: 64px;
+}
+body.rbd.strict .teamcard b {
+	font-family: "SCUMM Solid", ui-monospace, monospace;
+	font-size: 16px;
+	line-height: 20px;
+	margin-bottom: 4px;
+}
+body.rbd.strict .teamcard.new {
+	border-style: dashed;
+}
+body.rbd.strict .captainline {
+	border-width: 2px;
+	padding: 8px;
+	margin-bottom: 8px;
+}
+body.rbd.strict #mutinyPanel {
+	border-width: 2px;
+	padding: 8px;
+	margin-top: 8px;
+}
+body.rbd.strict .mut-head {
+	letter-spacing: 0;
+	text-transform: none;
+	font-family: "SCUMM Solid", ui-monospace, monospace;
+}
+body.rbd.strict #crewbar {
+	padding-top: 8px;
+}
+body.rbd.strict button.iconbtn {
+	border-width: 2px;
+	padding: 4px 8px;
+}
+body.rbd.strict .el {
+	border-width: 2px;
+	padding: 2px 6px;
+}
+body.rbd.strict .sendback {
+	border-width: 2px;
+	padding: 6px 8px;
+}
+body.rbd.strict #reilly .portrait {
+	margin-top: 0;
+}
+body.rbd.strict #reilly.on {
+	margin-bottom: 8px;
+}
+body.rbd.strict a.plain {
+	text-decoration: none;
+	border-bottom: 2px dotted currentColor;
+}
+
+/* ---- 5. the palette: last, so it wins over the shape rules above ---- */
+body.rbd.strict {
+	image-rendering: pixelated;
+
+	/* ---- the palette, straight from the portrait ---- */
+	--ground: var(--ega-black);
+	--ground-deep: var(--ega-black);
+	--ink: var(--ega-white);
+	--ink-dim: var(--ega-grey);
+	--ink-off: var(--ega-dark);
+	--voice: var(--ega-brightmagenta); /* his light, and his frame */
+	--verb: var(--ega-brightblue); /* his jacket */
+	--verb-hot: var(--ega-white);
+	--panel: var(--ega-blue); /* the deep blue in the jacket's shadow */
+	--rule: var(--ega-dark);
+}
+
+body.rbd.strict .screen {
+	background: var(--ground);
+	color: var(--ink);
+}
+body.rbd.strict .muted,
+body.rbd.strict .qnum {
+	color: var(--ink-dim);
+}
+body.rbd.strict .topbar {
+	background: var(--ground-deep);
+	color: var(--ink-dim);
+	border-bottom: 2px solid var(--voice);
+}
+body.rbd.strict .topbar .brand-sm {
+	color: var(--voice);
+}
+body.rbd.strict h1 {
+	color: var(--verb);
+	text-shadow: 2px 2px 0 var(--panel);
+}
+body.rbd.strict .say {
+	color: var(--voice);
+}
+/* the frame is baked into the picture; a second one round it was a double edge */
+body.rbd.strict #reilly .portrait {
+	border: 0;
+	box-shadow: none;
+}
+
+/* ---- verbs: his blue on black, white when live ---- */
+body.rbd.strict button,
+body.rbd.strict .btn {
+	background: var(--ground);
+	color: var(--verb);
+	border: 2px solid var(--panel);
+}
+body.rbd.strict button:hover:not(:disabled),
+body.rbd.strict button:active:not(:disabled),
+body.rbd.strict button.on,
+body.rbd.strict button.primary {
+	background: var(--ground);
+	color: var(--verb-hot);
+	border-color: var(--verb);
+}
+body.rbd.strict button:disabled {
+	color: var(--ink-off);
+	border-color: var(--ground);
+}
+body.rbd.strict .choice button.on {
+	color: var(--verb-hot);
+	border-color: var(--verb);
+}
+body.rbd.strict button.iconbtn {
+	background: var(--ega-grey);
+	border-color: var(--ink-off);
+}
+body.rbd.strict button.iconbtn.on {
+	background: var(--ega-white);
+	border-color: var(--ega-brightred);
+}
+
+/* ---- fields ---- */
+body.rbd.strict input[type="text"],
+body.rbd.strict select,
+body.rbd.strict .answer {
+	background: var(--ground);
+	color: var(--ink);
+	border: 2px solid var(--panel);
+	caret-color: var(--voice);
+}
+body.rbd.strict input::placeholder {
+	color: var(--ink-off);
+}
+body.rbd.strict :focus-visible,
+body.rbd.strict input:focus,
+body.rbd.strict select:focus {
+	outline: 2px solid var(--voice);
+	border-color: var(--verb);
+}
+body.rbd.strict ::selection {
+	background: var(--voice);
+	color: var(--ground);
+}
+body.rbd.strict a.plain {
+	color: var(--verb);
+	border-bottom-color: var(--verb);
+}
+
+/* ---- lists ---- */
+body.rbd.strict .roster li,
+body.rbd.strict #crewlist li {
+	color: var(--ink);
+	background-image: repeating-linear-gradient(90deg, var(--rule) 0 2px, transparent 2px 4px);
+}
+body.rbd.strict .roster li.me {
+	color: var(--verb);
+}
+body.rbd.strict .guessrow {
+	color: var(--ink);
+	background-image: repeating-linear-gradient(90deg, var(--rule) 0 2px, transparent 2px 4px);
+}
+body.rbd.strict .guessrow .ord {
+	color: var(--ink-dim);
+}
+
+/* ---- boxes ---- */
+body.rbd.strict .teamcard {
+	background: var(--ground);
+	border-color: var(--panel);
+	color: var(--ink);
+}
+body.rbd.strict .teamcard b {
+	color: var(--verb);
+}
+body.rbd.strict .teamcard .muted {
+	color: var(--ink-dim);
+}
+body.rbd.strict .teamcard.new {
+	border-color: var(--rule);
+	color: var(--ink-dim);
+}
+body.rbd.strict .teamcard.mine {
+	background: var(--panel);
+	border-color: var(--verb);
+	color: var(--ink);
+}
+body.rbd.strict .teamcard.mine .muted,
+body.rbd.strict .teamcard.mine b {
+	color: var(--ink);
+}
+body.rbd.strict .captainline {
+	background: var(--ground);
+	border-color: var(--verb);
+	color: var(--ink);
+}
+body.rbd.strict .sendback {
+	background: var(--panel);
+	color: var(--ink);
+	border: 2px solid var(--verb);
+}
+/* red and green keep their meaning: they are the only place they appear */
+body.rbd.strict #mutinyPanel {
+	background: var(--ground);
+	border-color: var(--ega-brightred);
+}
+body.rbd.strict .mut-head {
+	color: var(--ega-brightred);
+}
+body.rbd.strict .el {
+	border-color: var(--rule);
+	color: var(--ink);
+}
+body.rbd.strict .el.on {
+	background: var(--ega-brightgreen);
+	color: var(--ground);
+	border-color: var(--ega-brightgreen);
+}
+body.rbd.strict .v-ok,
+body.rbd.strict .earned.v-ok {
+	color: var(--ega-brightgreen);
+}
+body.rbd.strict .v-no,
+body.rbd.strict .earned.v-no {
+	color: var(--ega-brightred);
+}
+body.rbd.strict .simbar {
+	background: #111;
+}
+body.rbd.strict .simbar b {
+	color: var(--voice);
+}
+body.rbd.strict .rbd-tag {
+	background: var(--voice);
+	color: var(--ground);
+}
+

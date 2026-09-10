@@ -7,6 +7,10 @@
 		<link rel="stylesheet" href="styles.css" />
 	</head>
 	<body class="player">
+		<script>
+			// ?embed=1 — rendered inside devices.html, where the iframe is the viewport.
+			if (new URLSearchParams(location.search).get("embed") === "1") document.body.classList.add("embed");
+		</script>
 		<!-- Player client in an iPhone frame, matching what the host now does:
 		       · up to six guesses per question, each graded on its own, with a
 		         points schedule so the player can see what a later guess is worth
@@ -26,7 +30,17 @@
 				<div class="topbar">
 					<span class="brand-sm">Trivia</span>
 					<span id="whoTop" class="muted"></span>
+					<span id="teamTop" class="muted"></span>
 					<span id="scoreTop" class="muted"></span>
+				</div>
+
+				<!-- REILLY. Birthday skin only. The line floats above his head the way
+				     SCUMM dialogue does. Always there on the team screen; on a question
+				     screen only when he has something to say, so the answer box keeps
+				     its room on a short phone. -->
+				<div id="reilly">
+					<p class="say" id="sayLine"></p>
+					<img class="portrait" src="../assets/ega/ega_reilly/IMG_1423.png" alt="" />
 				</div>
 
 				<!-- JOIN: two doors. Returning player is a roster pick, with this
@@ -41,6 +55,27 @@
 					<select id="nameSelect" class="wfull" style="display: none"></select>
 					<input id="newname" class="wfull" type="text" placeholder="Your name" autocomplete="off" style="display: none" />
 					<button id="joinBtn" class="wfull" style="display: none">Join</button>
+					<p class="muted" id="closedNote" style="display: none">The host hasn't opened the room yet.</p>
+				</div>
+
+				<!-- TEAMS: after the name, before any question. One rectangle per team
+				     and one to start a new one. Whoever starts a team names it and is
+				     captain. Random mode: nothing to pick, wait for the host. -->
+				<div class="state" id="s-teams" style="display: none">
+					<h1>Pick a team</h1>
+					<div class="teamgrid" id="teamgrid"></div>
+					<div class="newname" id="teamNameRow" style="display: none">
+						<input id="teamName" type="text" placeholder="Team name" autocomplete="off" maxlength="24" />
+						<button id="teamNameBtn">Start</button>
+					</div>
+					<ul class="roster" id="teamsRoster" style="display: none"></ul>
+					<p class="muted" id="teamsWait" style="display: none">The host will deal the teams shortly.</p>
+				</div>
+
+				<!-- TEAM: your team, its captain, and the captain controls -->
+				<div class="state" id="s-team" style="display: none">
+					<h1 id="t-name"></h1>
+					<p class="muted" id="t-wait">Waiting for the first question…</p>
 				</div>
 
 				<!-- LOBBY -->
@@ -68,6 +103,14 @@
 					<p class="muted" id="s-wait"></p>
 				</div>
 
+				<!-- CAPTAIN: teams on and you're not the captain — the answer goes through them -->
+				<div class="state" id="s-captain" style="display: none">
+					<p class="qnum" id="c-label"></p>
+					<div class="captainline"><span id="c-hat"></span> <b id="c-who"></b> answers for <span id="c-team"></span></div>
+					<div id="c-guesses" class="guesslist"></div>
+					<p class="muted" id="c-wait"></p>
+				</div>
+
 				<!-- SIT OUT: Birthday Mode, and this question is yours -->
 				<div class="state" id="s-sitout" style="display: none">
 					<p class="qnum" id="o-label"></p>
@@ -84,6 +127,23 @@
 					<p class="muted" id="r-score">Score: <b><span id="score">0</span></b></p>
 					<p class="muted">Next question coming up…</p>
 				</div>
+
+				<!-- CREW BAR: the one captain control, pinned to the bottom. The captain
+				     sees "step down"; everyone else sees the vote in the same spot. -->
+				<!-- CREW: the whole team, on every screen once you're on one. The captain
+				     needs it as much as anyone — it is how they see who they answer for. -->
+				<ul class="roster small" id="crewlist" style="display: none"></ul>
+
+				<!-- MUTINY: who has moved against the captain. Sits in the blank space
+				     above the crew bar rather than over the game, so the question stays
+				     readable while the crew argues. -->
+				<div id="mutinyPanel" style="display: none">
+					<div class="mut-head"><img class="plank" src="../assets/ega/hat/mutiny-plank-24.png" alt="" /> <b id="mut-title"></b></div>
+					<ul class="roster small" id="mut-list"></ul>
+					<p class="muted" id="mut-count"></p>
+				</div>
+
+				<div id="crewbar" style="display: none"></div>
 			</div>
 		</div>
 
@@ -99,9 +159,22 @@
 			<br />
 			<label><input type="checkbox" id="liveToggle" /> Show verdicts live</label>
 			<label><input type="checkbox" id="ptsToggle" /> Show points on phones</label>
+			<label><input type="checkbox" id="openToggle" /> Room open</label>
+			<br />
+			Teams <select id="teamMode"><option value="off">off</option><option value="pick">players pick</option><option value="random">random</option></select>
+			<label><input type="checkbox" id="rotateToggle" /> Random captain every question</label>
+			<button class="btn" data-sim="deal">Host deals teams</button>
+			<button class="btn" data-sim="mate">Teammate joins</button>
+			<button class="btn" data-sim="matevote">Teammate votes</button>
+			<button class="btn" data-sim="mutiny">Teammates all agree</button>
+			<br />
+			<label>Reilly says <input id="sayInput" type="text" placeholder="type a line…" size="28" /></label>
+			<button class="btn" data-sim="say">Say it</button>
+			<button class="btn" data-sim="hush">Clear</button>
 			&nbsp; Jump to
 			<select id="jump"></select>
-			<button class="btn" data-sim="reset">Reset</button>
+			<button class="btn" data-sim="reset">Reset game</button>
+			<button class="btn" data-sim="restart">Restart — new player</button>
 		</div>
 
 		<script>
@@ -132,20 +205,118 @@
 			// ---- Player state. Persisted so a refresh lands you back where you were,
 			//      which is the mock's stand-in for the server's reconnect snapshot.
 			const KEY = "playerMock";
-			let game = { name: null, qi: -1, phase: "lobby", guesses: [], grant: false, adding: false, score: 0, live: false, showPts: false };
+			// Shared with index.html so the door and the phone agree about the room.
+			const ROOM_KEY = "mockRoomOpen";
+			// What the host types in session settings. Its own key: the mirrored game
+			// state is written by the phones, this is written by the host.
+			const SAY_KEY = "mockHostSay";
+			// Teams. `teams` is what the server's lobby frame would carry: every team,
+			// its members and its captain. `team` is the name of the one you're on.
+			// votes = who on your team has voted to replace the captain.
+			let game = { name: null, qi: -1, phase: "lobby", guesses: [], grant: false, adding: false, score: 0, live: false, showPts: false, open: true, teamMode: "off", rotate: false, teams: [], team: null, lobby: [], say: "" };
+			const MOCK_TEAMS = [
+				{ name: "Quizzards", members: ["Alice", "Bob"], captain: "Alice", votes: [], mutiny: false, mutinies: 0, crew: [] },
+				{ name: "Sofa Kings", members: ["Carol"], captain: "Carol", votes: [], mutiny: false, mutinies: 0, crew: [] },
+			];
 			try {
 				const saved = JSON.parse(localStorage.getItem(KEY) || "null");
 				if (saved) game = { ...game, ...saved };
 			} catch {}
+			try {
+				const r = localStorage.getItem(ROOM_KEY);
+				if (r !== null) game.open = r === "1"; // the door's toggle wins on load
+				const say = localStorage.getItem(SAY_KEY);
+				if (say !== null) game.say = say;
+			} catch {}
+			// Writing only when something actually changed is what stops the mirror
+			// from ping-ponging: an adopted state re-serialises identically, so the
+			// receiving frame writes nothing and the chain ends.
+			let lastWrite = null;
+			const embedded = window.parent !== window;
 			function save() {
+				const json = JSON.stringify(game);
+				if (json === lastWrite) return;
+				lastWrite = json;
 				try {
-					localStorage.setItem(KEY, JSON.stringify(game));
+					localStorage.setItem(KEY, json);
+					localStorage.setItem(ROOM_KEY, game.open ? "1" : "0");
 				} catch {}
+				// On the device wall the parent is the bus: it relays this to every
+				// other phone. postMessage works from file:// too, where a parent
+				// page is not allowed to reach into its iframes directly.
+				// after this render has shown its screen, so the wall's readout is current
+				if (embedded) setTimeout(() => window.parent.postMessage({ type: "state", json, screen: visibleScreen() }, "*"), 0);
+			}
+			const visibleScreen = () => (STATES.find((s) => $("#s-" + s).style.display !== "none") ?? "?");
+			function adopt(json) {
+				if (!json || json === lastWrite) return;
+				try {
+					const incoming = JSON.parse(json);
+					lastWrite = json;
+					game = { ...game, ...incoming };
+					if (game.name) document.querySelectorAll(".who").forEach((el) => (el.textContent = game.name));
+					render();
+				} catch {}
+			}
+			// Every other phone on the wall follows this one, and vice versa: via the
+			// storage event when the browser fires it, via the parent otherwise.
+			window.addEventListener("storage", (e) => e.key === KEY && adopt(e.newValue));
+			window.addEventListener("storage", (e) => {
+				if (e.key !== SAY_KEY) return;
+				game.say = e.newValue || "";
+				render();
+			});
+			window.addEventListener("message", (e) => {
+				const m = e.data || {};
+				if (m.type === "state") adopt(m.json);
+				else if (m.type === "sim") document.querySelector(`[data-sim="${m.act}"]`)?.click();
+				else if (m.type === "set") {
+					const el = document.querySelector(m.sel);
+					if (!el) return;
+					el[m.prop || "value"] = m.value;
+					el.dispatchEvent(new Event("change"));
+				} else if (m.type === "hello?") announce();
+			});
+			// Tell the wall what this phone knows: its state and its question list.
+			function announce() {
+				if (!embedded) return;
+				window.parent.postMessage({ type: "state", json: JSON.stringify(game), screen: visibleScreen(), jump: [...$("#jump").options].map((o) => ({ value: o.value, text: o.textContent })) }, "*");
 			}
 
 			const $ = (s) => document.querySelector(s);
 			const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]);
 			const q = () => (game.qi >= 0 ? QUESTIONS[game.qi] : null);
+			const teamsOn = () => game.teamMode !== "off";
+			const myTeam = () => game.teams.find((t) => t.name === game.team) ?? null;
+			const isCaptain = () => myTeam()?.captain === game.name;
+			// captain if teams are off: nobody stands between you and the answer box
+			const canAnswer = () => !teamsOn() || isCaptain();
+			// The headgear says who's who. Plain hat: captain, whether or not a vote is
+			// running against them. Black tricorn: captain installed by a mutiny. Red
+			// bandana: voted to replace the captain, kept after the mutiny succeeds so
+			// the crew stays visible. Anyone who did not vote wears nothing, whichever
+			// way the vote went. A step-down clears everything back to the plain hat.
+			// The black tricorn is drawn on odd widths (a centred skull needs a middle
+			// column), so it is the one icon whose file is 17 rather than 16.
+			const ICON_W = { "hat-pirate": 25 }; // odd width: a centred skull needs a middle column
+			const ICON = (kind, title) => {
+				const base = kind.replace(/-(red|green)$/, "");
+				return `<img class="hat ${base}" src="../assets/ega/hat/${kind}-${ICON_W[base] ?? 24}.png" alt="${title}" title="${title}" />`;
+			};
+			const HAT = ICON("hat-navy", "captain");
+			// Mutinies alternate colour so a crew can tell one uprising from the next:
+			// the first is red, the second green, the third red again.
+			const crewColour = (n) => (n % 2 === 1 ? "red" : "green");
+			const ORDINAL = ["", "first", "second", "third", "fourth", "fifth", "sixth", "seventh", "eighth"];
+			const nth = (n) => ORDINAL[n] ?? `${n}th`;
+			function headgear(t, m) {
+				if (!t) return "";
+				const done = t.mutinies || 0;
+				if (m === t.captain) return done ? ICON(`hat-pirate-${crewColour(done)}`, `captain by the ${nth(done)} mutiny`) : HAT;
+				if (t.votes.includes(m)) return ICON(`bandana-${crewColour(done + 1)}`, "voted to replace the captain");
+				if ((t.crew || []).includes(m)) return ICON(`bandana-${crewColour(done)}`, `sailed with the ${nth(done)} mutiny`);
+				return `<span class="hatgap"></span>`;
+			}
 			const isList = (x) => x.kind === "list";
 			const mine = (x) => x.author === "YOU";
 			const qLabel = (x) => (x.author ? `${x.author === "YOU" ? "Your" : x.author + "'s"} question` : `Question ${game.qi + 1}`);
@@ -153,30 +324,214 @@
 			const canGuessMore = (x) => game.phase === "collecting" && game.guesses.length < x.guesses;
 
 			// ---- rendering ---------------------------------------------------
-			const STATES = ["join", "lobby", "answer", "submitted", "sitout", "reveal"];
+			const STATES = ["join", "teams", "team", "lobby", "answer", "submitted", "captain", "sitout", "reveal"];
 			function show(state) {
 				for (const s of STATES) $("#s-" + s).style.display = s === state ? "flex" : "none";
+				renderReilly(state);
+				renderCrew();
+				renderCrewbar();
+				renderMutiny();
+			}
+			// He is on every screen from the moment you're in the game, and the line
+			// above his head keeps its height whether or not there is anything in it.
+			// Showing him only when he speaks made the whole screen jump each time.
+			function renderReilly(state) {
+				const on = document.body.classList.contains("rbd") && game.name && !["join", "teams"].includes(state);
+				$("#reilly").classList.toggle("on", on);
+				$("#sayLine").textContent = (game.say || "").trim();
+			}
+			function renderCrew() {
+				const el = $("#crewlist");
+				const t = myTeam();
+				const on = teamsOn() && t && game.name && !["join", "teams"].includes(visibleScreen());
+				el.style.display = on ? "" : "none";
+				if (on) el.innerHTML = rosterHtml(t);
 			}
 			function render() {
 				save();
-				$("#whoTop").textContent = game.name || "";
+				$("#whoTop").innerHTML = game.name ? `${esc(game.name)}${teamsOn() && myTeam() ? " " + headgear(myTeam(), game.name).replace(/<span class="hatgap"><\/span>/, "") : ""}` : "";
+				$("#teamTop").textContent = game.name && teamsOn() && game.team ? game.team : "";
 				$("#scoreTop").textContent = game.name && game.showPts ? `${game.score} pts` : "";
 				$("#liveToggle").checked = game.live;
 				$("#ptsToggle").checked = game.showPts;
+				$("#openToggle").checked = game.open;
+				$("#teamMode").value = game.teamMode;
+				$("#rotateToggle").checked = game.rotate;
 				$("#jump").value = String(game.qi);
 				if (!game.name) {
 					renderJoin();
 					return show("join");
 				}
 				const x = q();
-				if (!x || game.phase === "lobby") return show("lobby");
+				// teams on and not on one yet: pick, or wait for the deal
+				if (teamsOn() && !myTeam()) return renderTeams();
+				if (!x || game.phase === "lobby") return teamsOn() ? renderTeam() : show("lobby");
 				if (game.phase === "revealing") return renderReveal(x);
 				if (mine(x)) {
 					$("#o-label").textContent = qLabel(x);
 					return show("sitout");
 				}
+				if (!canAnswer()) return renderCaptain(x);
 				if (game.grant || game.adding || game.guesses.length === 0) return renderAnswer(x);
 				return renderSubmitted(x);
+			}
+
+			// ---- teams -------------------------------------------------------
+			function renderTeams() {
+				const grid = $("#teamgrid");
+				grid.innerHTML = "";
+				const pick = game.teamMode === "pick";
+				$("#teamsWait").style.display = pick ? "none" : "";
+				$("#teamNameRow").style.display = "none";
+				document.querySelector("#s-teams h1").textContent = pick ? "Pick a team" : "You're in";
+				// Random mode: nothing to pick, so show the room filling up instead of a
+				// bare wait — it is the longest dead time anyone spends in the app.
+				const rl = $("#teamsRoster");
+				rl.style.display = pick ? "none" : "";
+				if (!pick) rl.innerHTML = game.lobby.map((m) => `<li class="${m === game.name ? "me" : ""}"><span class="hatgap"></span> ${esc(m)}${m === game.name ? " (you)" : ""}</li>`).join("");
+				if (pick) {
+					for (const t of game.teams) {
+						const b = document.createElement("button");
+						b.className = "teamcard";
+						b.innerHTML = `<b>${esc(t.name)}</b><span class="muted">${t.members.map((m) => esc(m) + (m === t.captain ? " " + HAT : "")).join(", ")}</span>`;
+						b.onclick = () => joinTeam(t.name);
+						grid.appendChild(b);
+					}
+					const nb = document.createElement("button");
+					nb.className = "teamcard new";
+					nb.innerHTML = `<b>+ New team</b><span class="muted">you name it, you're captain</span>`;
+					nb.onclick = () => {
+						$("#teamNameRow").style.display = "";
+						$("#teamName").focus();
+					};
+					grid.appendChild(nb);
+				}
+				show("teams");
+			}
+			function joinTeam(nm) {
+				const t = game.teams.find((x) => x.name === nm);
+				if (!t) return;
+				leaveTeam();
+				t.members.push(game.name);
+				if (!t.captain) t.captain = game.name; // first in is captain
+				game.team = nm;
+				render();
+			}
+			function leaveTeam() {
+				const t = myTeam();
+				if (!t) return;
+				t.members = t.members.filter((m) => m !== game.name);
+				t.votes = t.votes.filter((m) => m !== game.name);
+				t.crew = (t.crew || []).filter((m) => m !== game.name);
+				if (t.captain === game.name) t.captain = t.members[0] ?? null; // server would pick at random; the mock has one candidate
+				game.team = null;
+			}
+			function newTeam() {
+				const nm = $("#teamName").value.trim();
+				if (!nm) return $("#teamName").focus();
+				if (game.teams.some((t) => t.name.toLowerCase() === nm.toLowerCase())) return joinTeam(game.teams.find((t) => t.name.toLowerCase() === nm.toLowerCase()).name);
+				game.teams.push({ name: nm, members: [], captain: null, votes: [], mutiny: false, mutinies: 0, crew: [] });
+				$("#teamName").value = "";
+				joinTeam(nm);
+			}
+			function rosterHtml(t) {
+				return t.members.map((m) => `<li class="${m === game.name ? "me" : ""}">${headgear(t, m)} ${esc(m)}${m === game.name ? " (you)" : ""}</li>`).join("");
+			}
+			// The one captain control, pinned to the bottom of the screen. The captain
+			// can hand the role to a random teammate; everyone else can vote to
+			// replace them, and at 50 % + 1 of the team it goes to a random voter.
+			function renderCrewbar() {
+				const bar = $("#crewbar");
+				const t = myTeam();
+				const show = teamsOn() && t && game.name && !["join", "teams"].includes(visibleScreen());
+				bar.style.display = show ? "" : "none";
+				bar.classList.toggle("corner", show && t.members.length >= 2 && !isCaptain());
+				if (!show) return;
+				if (t.members.length < 2) bar.innerHTML = `<p class="muted">You're captain until someone else joins.</p>`;
+				else if (isCaptain()) bar.innerHTML = `<button class="wfull" id="stepDown">Step down as captain</button>`;
+				else {
+					// One control, no label: tap the plank to move against the captain,
+					// tap it again to take it back. The panel above says who and how many.
+					const on = t.votes.includes(game.name);
+					bar.innerHTML = `<button class="iconbtn ${on ? "on" : ""}" id="voteBtn" title="${on ? "take my vote back" : "vote to replace " + t.captain}" aria-label="${on ? "take my vote back" : "vote to replace the captain"}"><img src="../assets/ega/hat/mutiny-plank-24.png" alt="" /></button>`;
+				}
+				const sd = bar.querySelector("#stepDown");
+				if (sd) sd.onclick = () => (stepDown(t), render());
+				const vb = bar.querySelector("#voteBtn");
+				if (vb) vb.onclick = () => (vote(t, game.name), render());
+			}
+			const randomOther = (t, not, from) => {
+				const c = (from ?? t.members).filter((m) => m !== not);
+				return c.length ? c[Math.floor(Math.random() * c.length)] : t.captain;
+			};
+			function setCaptain(t, who) {
+				t.captain = who;
+				t.votes = [];
+			}
+			// A step-down is a clean hand-over: the hat moves, no pirates.
+			function stepDown(t) {
+				setCaptain(t, randomOther(t, t.captain));
+				t.mutiny = false;
+				t.mutinies = 0; // a clean hand-over resets the count, so the next uprising is red again
+				t.crew = [];
+			}
+			// A successful vote is a mutiny: the new captain wears the tricorn and the
+			// voters keep their bandanas until the next clean hand-over.
+			function vote(t, who) {
+				if (who === t.captain) return;
+				t.votes = t.votes.includes(who) ? t.votes.filter((m) => m !== who) : t.votes.concat(who);
+				if (t.votes.length >= votesNeeded(t)) {
+					const crew = t.votes.slice();
+					setCaptain(t, randomOther(t, t.captain, crew));
+					t.mutinies = (t.mutinies || 0) + 1; // next one comes up the other colour
+					t.mutiny = true;
+					t.crew = crew;
+				}
+			}
+			// The vote needs 50 % + 1 of the team, the captain included in the count.
+			// 50 % + 1 of the team, but never more than the number of people who are
+			// allowed to vote — the captain cannot vote against themselves. On a team
+			// of two that makes it one vote, so a mutiny there carries immediately.
+			const votesNeeded = (t) => Math.min(Math.floor(t.members.length / 2) + 1, Math.max(1, t.members.length - 1));
+			function renderMutiny() {
+				const box = $("#mutinyPanel");
+				const t = myTeam();
+				const on = teamsOn() && t && game.name && t.members.includes(game.name) && !["join", "teams"].includes(visibleScreen());
+				const pending = on && t.votes.length > 0;
+				const settled = on && t.mutiny && !pending;
+				box.style.display = pending || settled ? "" : "none";
+				if (!pending && !settled) return;
+
+				const done = t.mutinies || 0;
+				if (settled) {
+					// the vote carried, and it stands until the next clean hand-over
+					$("#mut-title").textContent = done > 1 ? `${nth(done)} mutiny` : "Mutiny";
+					$("#mut-list").innerHTML = `<li>${headgear(t, t.captain)} ${esc(t.captain)}${t.captain === game.name ? " (you)" : ""}</li>`;
+					$("#mut-count").textContent = t.captain === game.name ? "The crew put you in charge." : `${t.captain} took the ship.`;
+					return;
+				}
+				const target = t.captain === game.name;
+				const label = done ? `${nth(done + 1)} mutiny` : "Mutiny";
+				$("#mut-title").textContent = target ? `${label} against you` : label;
+				$("#mut-list").innerHTML = t.votes.map((m) => `<li>${headgear(t, m)} ${esc(m)}${m === game.name ? " (you)" : ""}</li>`).join("");
+				$("#mut-count").textContent = `${t.votes.length} of ${votesNeeded(t)} to replace ${target ? "you" : t.captain}`;
+			}
+
+			function renderTeam() {
+				$("#t-name").innerHTML = esc(myTeam().name);
+				show("team");
+			}
+			// Not the captain: the question is theirs to answer. You see what the team
+			// has sent, and can still vote if they're sitting on it.
+			function renderCaptain(x) {
+				const t = myTeam();
+				$("#c-label").textContent = qLabel(x);
+				$("#c-who").textContent = t.captain;
+				$("#c-hat").innerHTML = headgear(t, t.captain);
+				$("#c-team").textContent = t.name;
+				guessLines(x, $("#c-guesses"), false);
+				$("#c-wait").textContent = game.guesses.length ? (canGuessMore(x) ? `${t.captain} may guess again.` : "Waiting for the host…") : `Go tell ${t.captain} the answer.`;
+				show("captain");
 			}
 
 			// The format line: everything the player needs to answer well, in one line.
@@ -322,7 +677,20 @@
 				game.adding = false;
 				render();
 			}
+			// Every question starts the crew clean: no pending vote, no bandanas, the
+			// captain back in the plain hat. Whoever holds the job keeps it — only the
+			// mutiny history is wiped, so grudges do not follow you round the deck.
+			function calmSeas() {
+				for (const t of game.teams) {
+					t.votes = [];
+					t.crew = [];
+					t.mutiny = false;
+					t.mutinies = 0;
+				}
+			}
 			function openQuestion(i) {
+				if (teamsOn() && game.rotate && game.qi >= 0) for (const t of game.teams) if (t.members.length > 1) stepDown(t);
+				if (teamsOn()) calmSeas();
 				game.qi = i;
 				game.phase = "collecting";
 				game.guesses = [];
@@ -364,13 +732,16 @@
 				sel.style.display = joinMode === "returning" ? "" : "none";
 				newInput.style.display = joinMode === "new" ? "" : "none";
 				$("#joinBtn").style.display = joinMode ? "" : "none";
-				$("#joinBtn").textContent = joinMode === "new" ? "Join as new player" : "Join";
+				$("#joinBtn").disabled = !game.open;
+				$("#closedNote").style.display = game.open ? "none" : "";
+				$("#joinBtn").textContent = !game.open ? "Room closed" : joinMode === "new" ? "Join as new player" : "Join";
 				if (joinMode === "new") newInput.focus();
 			}
 			$("#chooseReturning").onclick = () => { joinMode = "returning"; renderJoin(); };
 			$("#chooseNew").onclick = () => { joinMode = "new"; renderJoin(); };
 			newInput.addEventListener("keydown", (e) => e.key === "Enter" && $("#joinBtn").click());
 			$("#joinBtn").onclick = () => {
+				if (!game.open) return; // server: JOIN rejected until the host opens the room
 				let who;
 				if (joinMode === "new") {
 					who = newInput.value.trim();
@@ -381,6 +752,7 @@
 				}
 				if (!who) return;
 				game.name = who;
+				game.lobby = [...new Set([...roster.filter((p) => p.live).map((p) => p.name), who])];
 				try {
 					localStorage.setItem("mockPerson", who);
 				} catch {}
@@ -391,6 +763,7 @@
 			document.querySelectorAll("[data-switch]").forEach((el) =>
 				el.addEventListener("click", (e) => {
 					e.preventDefault();
+					leaveTeam();
 					game.name = null;
 					joinMode = "returning";
 					renderRoster();
@@ -417,6 +790,25 @@
 				game.showPts = e.target.checked;
 				render();
 			};
+			$("#openToggle").onchange = (e) => {
+				game.open = e.target.checked;
+				render();
+			};
+			$("#rotateToggle").onchange = (e) => {
+				game.rotate = e.target.checked;
+				render();
+			};
+			$("#teamMode").onchange = (e) => {
+				game.teamMode = e.target.value;
+				leaveTeam();
+				// Only "players pick" starts with teams on screen. Random has none until
+				// the host deals, which is the whole point of the waiting screen.
+				game.teams = game.teamMode === "pick" ? MOCK_TEAMS.map((t) => ({ ...t, members: [...t.members], votes: [], crew: [] })) : [];
+				render();
+			};
+			$("#teamNameBtn").onclick = newTeam;
+			$("#teamName").addEventListener("keydown", (e) => e.key === "Enter" && newTeam());
+			$("#sayInput").addEventListener("keydown", (e) => e.key === "Enter" && document.querySelector('[data-sim="say"]').click());
 			QUESTIONS.forEach((x, i) => {
 				const o = document.createElement("option");
 				o.value = String(i);
@@ -430,14 +822,59 @@
 			document.querySelectorAll("[data-sim]").forEach((b) =>
 				b.addEventListener("click", () => {
 					const act = b.dataset.sim;
+					if (act === "restart") {
+						// back to the door: no name, no team, nothing remembered about this phone
+						try {
+							localStorage.removeItem(KEY);
+							localStorage.removeItem("mockPerson");
+						} catch {}
+						location.reload();
+						return;
+					}
 					if (act === "reset") {
 						try {
 							localStorage.removeItem(KEY);
 						} catch {}
-						game = { name: game.name, qi: -1, phase: "lobby", guesses: [], grant: false, adding: false, score: 0, live: game.live, showPts: game.showPts };
+						game = { ...game, qi: -1, phase: "lobby", guesses: [], grant: false, adding: false, score: 0 };
 						return render();
 					}
 					if (!game.name) return;
+					if (act === "deal") {
+						// the host's Deal button: you land on a team with strangers, not captain
+						if (!teamsOn()) return;
+						leaveTeam();
+						game.teams = [
+							{ name: "Team 1", members: ["Alice", game.name, "Bob"], captain: "Alice", votes: [], mutiny: false, mutinies: 0, crew: [] },
+							{ name: "Team 2", members: ["Carol", "Dave"], captain: "Carol", votes: [], mutiny: false, mutinies: 0, crew: [] },
+						];
+						game.team = "Team 1";
+						return render();
+					}
+					if (act === "say" || act === "hush") {
+						game.say = act === "say" ? $("#sayInput").value : "";
+						try {
+							localStorage.setItem(SAY_KEY, game.say);
+						} catch {}
+						return render();
+					}
+					if (act === "mate" || act === "matevote" || act === "mutiny") {
+						const t = myTeam();
+						if (!t) return;
+						if (act === "mate") {
+							const pool = ["Eve", "Frank", "Grace", "Heidi", "Ivan"].filter((m) => !t.members.includes(m));
+							if (pool.length) t.members.push(pool[0]);
+						} else if (act === "matevote") {
+							const v = t.members.find((m) => m !== t.captain && m !== game.name && !t.votes.includes(m));
+							if (v) vote(t, v);
+						} else {
+							// everyone else agrees with you — one at a time, so the threshold logic runs
+							for (const m of t.members.filter((m) => m !== t.captain && m !== game.name && !t.votes.includes(m))) {
+								if (myTeam().captain !== t.captain) break; // the mutiny already happened
+								vote(t, m);
+							}
+						}
+						return render();
+					}
 					const x = q();
 					if (act === "open") return openQuestion(game.qi < 0 ? 0 : game.qi);
 					if (act === "next") return openQuestion((game.qi + 1) % QUESTIONS.length);
@@ -461,6 +898,7 @@
 			renderRoster();
 			if (game.name) document.querySelectorAll(".who").forEach((el) => (el.textContent = game.name));
 			render();
+			announce();
 		</script>
 	</body>
 </html>

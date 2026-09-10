@@ -1,0 +1,68 @@
+/* =====================================================================
+   Reilly Birthday Mode — the FONT switch. Loaded last, so it wins.
+
+   Two type systems, one toggle:
+
+   SCUMM (default, no class)
+       The LucasArts faces rebuilt by Goatmeal on FontStruct. Authentic to
+       Monkey Island, and the only way to get the outlined dialogue face.
+       The catch is that they are display faces: no lower-case descender
+       depth to speak of, several are missing digits, and at 16px a
+       lower-case letter is about six pixels tall, which is small for a
+       phone held at arm's length across a room.
+
+   DOS (body.rbd.mono)
+       The stack this skin used before the SCUMM faces arrived: an IBM
+       VGA bitmap face if the viewer happens to have one installed, then
+       whatever monospace the phone has. Not Monkey Island, but it is the
+       other half of the same era — this is what the DOS prompt that
+       launched the game looked like. It has every glyph, a bigger
+       x-height, and it holds up better at small sizes on a real phone.
+
+   The switch is per-viewer and only ever changes type. Nothing here
+   touches colour, spacing or layout, so either face drops into the same
+   design. Sizes stay at 16 and 32 in both, so the grid still holds.
+   ===================================================================== */
+
+body.rbd.mono .screen,
+body.rbd.mono .simbar {
+	font-family: "Px437 IBM VGA8", "IBM Plex Mono", "DejaVu Sans Mono", ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace;
+	-webkit-font-smoothing: none;
+	font-smooth: never;
+}
+
+/* Every role that the SCUMM sheets assign a display face, handed back to
+   the mono stack. Weight does the work the different faces used to. */
+body.rbd.mono h1,
+body.rbd.mono button,
+body.rbd.mono .btn,
+body.rbd.mono .teamcard b,
+body.rbd.mono .mut-head,
+body.rbd.mono .say {
+	font-family: "Px437 IBM VGA8", "IBM Plex Mono", "DejaVu Sans Mono", ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace;
+	font-weight: bold;
+}
+
+/* The outlined dialogue face has no equivalent here, so the line is drawn
+   with a hard one-pixel shadow on all four sides instead: same job, same
+   hard edges, no blur. */
+body.rbd.mono .say {
+	text-shadow:
+		2px 0 0 var(--ega-black),
+		-2px 0 0 var(--ega-black),
+		0 2px 0 var(--ega-black),
+		0 -2px 0 var(--ega-black);
+}
+
+/* The SCUMM faces run small for their point size; the mono stack does not,
+   so the headline comes down a notch to keep the same visual weight. Both
+   values are still whole multiples of the pixel grid. */
+body.rbd.mono h1 {
+	font-size: 24px;
+	line-height: 28px;
+}
+body.rbd.mono .say {
+	font-size: 24px;
+	line-height: 28px;
+	min-height: 56px; /* two lines, same reserved block as the SCUMM sizes */
+}

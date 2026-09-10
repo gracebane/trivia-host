@@ -1,0 +1,341 @@
+/* =====================================================================
+   Reilly Birthday Mode — player skin.  PLACEHOLDER, to be designed.
+
+   Loaded after styles.css by rbd_player.html, which is otherwise the same
+   file as player.html. Nothing here changes behaviour: it only repaints.
+   Every rule is scoped to body.rbd, so the normal phone is untouched.
+
+   The direction agreed so far is Secret of Monkey Island / EGA: the 16
+   colour palette, hard edges, no gradients, no rounded corners, no
+   anti-aliased shadows. Sizes stay on a 4px grid so nothing lands on a
+   half pixel. This file is deliberately restrained — it establishes the
+   palette and the shapes, and leaves the character, the dialogue font and
+   the portrait for the real design pass.
+   ===================================================================== */
+
+body.rbd {
+	/* --- the EGA 16, named --- */
+	--ega-black: #000000;
+	--ega-blue: #0000aa;
+	--ega-green: #00aa00;
+	--ega-cyan: #00aaaa;
+	--ega-red: #aa0000;
+	--ega-magenta: #aa00aa;
+	--ega-brown: #aa5500;
+	--ega-grey: #aaaaaa;
+	--ega-dark: #555555;
+	--ega-brightblue: #5555ff;
+	--ega-brightgreen: #55ff55;
+	--ega-brightcyan: #55ffff;
+	--ega-brightred: #ff5555;
+	--ega-brightmagenta: #ff55ff;
+	--ega-yellow: #ffff55;
+	--ega-white: #ffffff;
+
+	/* --- roles --- */
+	--ink: var(--ega-white);
+	--ink-dim: var(--ega-grey);
+	--ground: var(--ega-blue);
+	--ground-deep: var(--ega-black);
+	--accent: var(--ega-brightmagenta);
+	--accent-2: var(--ega-yellow);
+	--ok: var(--ega-brightgreen);
+	--no: var(--ega-brightred);
+
+	--edge: 2px;
+	background: #1a1a1a;
+}
+
+/* ---- the LucasArts SCUMM faces (Goatmeal, Fontstruct, CC BY-NC-SA) ----
+   Four roles, four files. Anything a face lacks (the menu fonts have no
+   digits; none has a middot) falls through to the monospace stack per glyph,
+   which is why the stacks below end the way they do.
+     body      subtitle-roman   readable at small sizes, full glyphs
+     headline  credits          the title-screen face
+     button    solid            the dialogue face, filled
+     dialogue  outline          Reilly's lines — reserved, see .say below */
+@font-face {
+	font-family: "SCUMM Subtitle";
+	src: url("../assets/monkey_island_fonts/lucasarts-scumm-subtitle-roman.otf/lucasarts-scumm-subtitle-roman.otf") format("opentype");
+}
+@font-face {
+	font-family: "SCUMM Credits";
+	src: url("../assets/monkey_island_fonts/lucasarts-scumm-credits.otf/lucasarts-scumm-credits.otf") format("opentype");
+}
+@font-face {
+	font-family: "SCUMM Solid";
+	src: url("../assets/monkey_island_fonts/lucasarts-scumm-solid.otf/lucasarts-scumm-solid.otf") format("opentype");
+}
+@font-face {
+	font-family: "SCUMM Outline";
+	src: url("../assets/monkey_island_fonts/lucasarts-scumm-outline.otf/lucasarts-scumm-outline.otf") format("opentype");
+}
+
+body.rbd .screen,
+body.rbd .simbar {
+	font-family: "SCUMM Subtitle", ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace;
+	font-size: 15px;
+	-webkit-font-smoothing: none;
+	font-smooth: never;
+}
+
+body.rbd h1 {
+	font-family: "SCUMM Credits", "SCUMM Solid", ui-monospace, monospace;
+	font-weight: normal;
+	font-size: 26px;
+}
+
+body.rbd button,
+body.rbd .btn,
+body.rbd .teamcard b {
+	font-family: "SCUMM Solid", ui-monospace, monospace;
+	font-weight: normal;
+}
+
+/* Reilly speaks in this. Not used yet: the portrait and trigger lines are
+   the next design pass. Drop a <p class="say"> anywhere and it's ready. */
+body.rbd .say {
+	font-family: "SCUMM Outline", "SCUMM Solid", ui-monospace, monospace;
+	font-size: 20px;
+	color: var(--ega-white);
+	text-align: center;
+	line-height: 1.3;
+}
+
+body.rbd .phone {
+	border-color: var(--ega-black);
+	border-radius: 0;
+	box-shadow: 0 0 0 4px var(--ega-dark);
+}
+
+body.rbd.embed .phone {
+	box-shadow: none;
+}
+
+body.rbd .phone::before {
+	display: none; /* no notch: this is a 320x200 screen, not an iPhone */
+}
+
+body.rbd .screen {
+	background: var(--ground);
+	color: var(--ink);
+	image-rendering: pixelated;
+}
+
+body.rbd .topbar {
+	background: var(--ground-deep);
+	color: var(--ega-brightcyan);
+	border-bottom: var(--edge) solid var(--ega-brightcyan);
+	margin: -14px -18px 16px;
+	padding: 8px 12px;
+	text-transform: uppercase;
+	letter-spacing: 1px;
+}
+
+body.rbd .topbar .brand-sm {
+	color: var(--accent-2);
+}
+
+body.rbd .muted,
+body.rbd .qnum {
+	color: var(--ink-dim);
+}
+
+body.rbd h1 {
+	color: var(--accent-2);
+	text-transform: uppercase;
+	letter-spacing: 2px;
+	text-shadow: 2px 2px 0 var(--ega-black);
+}
+
+/* ---- controls: hard rectangles, no radius, no gradient ---- */
+body.rbd button,
+body.rbd .btn {
+	background: var(--ega-dark);
+	color: var(--ink);
+	border: var(--edge) solid var(--ega-white);
+	border-radius: 0;
+	text-transform: uppercase;
+	letter-spacing: 1px;
+	box-shadow: inset -2px -2px 0 var(--ega-black), inset 2px 2px 0 var(--ega-grey);
+}
+
+body.rbd button:hover:not(:disabled) {
+	background: var(--ega-grey);
+	color: var(--ega-black);
+}
+
+body.rbd button:active:not(:disabled) {
+	box-shadow: inset 2px 2px 0 var(--ega-black), inset -2px -2px 0 var(--ega-grey);
+}
+
+body.rbd button:disabled {
+	background: var(--ega-black);
+	color: var(--ega-dark);
+	border-color: var(--ega-dark);
+	box-shadow: none;
+}
+
+body.rbd input[type="text"],
+body.rbd select,
+body.rbd .answer {
+	background: var(--ega-black);
+	color: var(--ega-brightgreen);
+	border: var(--edge) solid var(--ega-brightcyan);
+	border-radius: 0;
+}
+
+body.rbd input::placeholder {
+	color: var(--ega-dark);
+}
+
+/* ---- team picking ---- */
+body.rbd .teamcard {
+	background: var(--ega-black);
+	border: var(--edge) solid var(--ega-brightcyan);
+	border-radius: 0;
+	color: var(--ink);
+}
+
+body.rbd .teamcard.new {
+	border-style: dashed;
+	color: var(--ink-dim);
+}
+
+body.rbd .teamcard.mine {
+	background: var(--accent);
+	color: var(--ega-black);
+	border-color: var(--ega-white);
+}
+
+body.rbd .roster li {
+	border-bottom: 1px solid var(--ega-dark);
+}
+
+body.rbd .roster li.me {
+	color: var(--accent-2); /* the blue "you" would vanish on a blue ground */
+}
+
+body.rbd .captainline {
+	border: var(--edge) solid var(--accent-2);
+	border-radius: 0;
+	background: var(--ega-black);
+}
+
+body.rbd .votebar button.on {
+	background: var(--accent);
+	color: var(--ega-black);
+}
+
+/* ---- answers and verdicts ---- */
+body.rbd .guessrow {
+	border-bottom: 1px solid var(--ega-dark);
+}
+
+body.rbd .el {
+	border: var(--edge) solid var(--ega-dark);
+	border-radius: 0;
+}
+
+body.rbd .el.on {
+	background: var(--ok);
+	color: var(--ega-black);
+	border-color: var(--ega-white);
+}
+
+body.rbd .v-ok,
+body.rbd .earned.v-ok {
+	color: var(--ok);
+}
+
+body.rbd .v-no,
+body.rbd .earned.v-no {
+	color: var(--no);
+}
+
+body.rbd .sendback {
+	background: var(--ega-brown);
+	color: var(--ega-white);
+	border: var(--edge) solid var(--ega-yellow);
+	border-radius: 0;
+}
+
+body.rbd a.plain {
+	color: var(--ega-brightcyan);
+}
+
+/* ---- the mock control bar, so it reads as not-the-app ---- */
+body.rbd .simbar {
+	background: #111;
+	color: var(--ega-grey);
+	border-color: var(--ega-dark);
+}
+
+body.rbd .simbar b {
+	color: var(--accent-2);
+}
+
+body.rbd .rbd-tag {
+	background: var(--accent);
+	color: var(--ega-black);
+	padding: 1px 6px;
+	text-transform: uppercase;
+	letter-spacing: 1px;
+	font-size: 11px;
+}
+
+/* ---- mutiny panel ---- */
+body.rbd #mutinyPanel {
+	background: var(--ega-black);
+	border: var(--edge) solid var(--ega-brightred);
+	border-radius: 0;
+}
+body.rbd .mut-head {
+	color: var(--accent-2);
+	font-family: "SCUMM Credits", "SCUMM Solid", ui-monospace, monospace;
+}
+body.rbd button.iconbtn {
+	background: var(--ega-grey);
+	border: var(--edge) solid var(--ega-dark);
+	border-radius: 0;
+	box-shadow: none;
+}
+body.rbd button.iconbtn.on {
+	background: var(--ega-white);
+	border-color: var(--ega-brightred);
+}
+
+/* ---- Reilly and his line ---- */
+body.rbd #reilly.on {
+	display: flex;
+	flex-direction: column;
+	align-items: center;
+	flex: 0 0 auto;
+	margin: 0 0 6px;
+}
+body.rbd #reilly .portrait {
+	width: min(60%, 196px);
+	max-height: 22vh; /* a short phone still needs room for the answer box */
+	object-fit: contain;
+	image-rendering: pixelated;
+	border: var(--edge) solid var(--ega-black);
+	box-shadow: 0 0 0 var(--edge) var(--ega-brightmagenta);
+	margin-top: 4px;
+}
+/* SCUMM dialogue: over the speaker's head, in the outline face, no box */
+body.rbd .say {
+	font-family: "SCUMM Outline", "SCUMM Solid", ui-monospace, monospace;
+	font-size: 18px;
+	line-height: 22px;
+	/* two lines are always reserved, empty or not, so he never moves */
+	min-height: 44px;
+	color: var(--ega-white);
+	text-align: center;
+	margin: 0 0 6px;
+	padding: 0 4px;
+	max-width: 100%;
+	overflow-wrap: anywhere;
+}
+body.rbd #crewlist li {
+	border-bottom: 1px solid var(--ega-dark);
+}

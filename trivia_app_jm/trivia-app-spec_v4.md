@@ -230,6 +230,46 @@ Not a software concept. Purely an out-of-app way to chunk breaks.
 
 ---
 
+## Room gate
+
+The room starts **closed**. The open/close button is in session settings, not the control strip: it is a once-a-party action, not a per-question verb. A JOIN frame against a closed room is rejected with a reason the phone shows ("the host hasn't opened the room yet") and no roster entry is made. The host opens it with one button in the control strip, and can close it again at any time; closing never removes anyone already in. Reconnects of existing players are not joins and are never gated.
+
+Why: the party fills up before the host is ready, and stragglers trickle in during play. The gate is what makes "everyone who's in is in" a decision rather than an accident, which matters most for team assignment.
+
+---
+
+## Teams
+
+A session setting, off by default, with two on positions:
+
+- **Players pick.** After the name and before any question the phone shows one rectangle per team plus "New team". Whoever starts a team names it and is its captain. Players can switch teams until the game starts.
+- **Random.** The setting is **max players per team**. Players who join sit in a lobby and are told to wait; the host deals them with a **Deal teams** button in session settings, which is the only thing that ever deals. Nothing is dealt implicitly at Start, so a hand-adjusted arrangement survives. Teams fill to the max and the remainder is the small team (6 at 4 → 4 + 2, not 3 + 3); a remainder of one borrows a player from a full team (9 at 4 → 4 + 3 + 2). Teams are named Team 1..N. Nobody picks.
+
+**Latecomers.** Once the teams exist, a player who joins in random mode is placed by protocol, never at random across all teams: **the smallest team, and at parity a random one of the smallest**. This keeps the sizes within one of each other however people trickle in. Max per team is a cap rather than a target, so when every team is full the latecomer starts a new one; a team still holding a single player at Start is folded into the smallest other team, which is the one case a team may sit one over the max. In pick mode a latecomer picks like everyone else. Anyone still unassigned at Start is placed by the same rule.
+
+Either way, once the game starts the team list is fixed. A late joiner picks a team (or is dealt to the smallest). The team mode setting itself locks at Start, because the answer log is keyed by team from then on.
+
+**The team is the scoring unit.** Every answer row carries both `personId` (who typed it) and `unitId` (who it counts for: the team, or the person when teams are off). The fold, the outcome, the submission tracker, the stats, the standings and the leaderboard all walk units. Nothing else about grading changes: guesses, send-back, verdicts and points all work per team exactly as they did per player.
+
+**Captain.** Each team has one. Only the captain's phone gets the answer box; everyone else on the team sees who the captain is, what the team has sent, and a nudge to go tell the captain the answer. The captain is:
+
+- by default the first person onto the team (the one who named it, or the first dealt in)
+- re-drawn at random every question if the "random captain every question" setting is on
+- replaceable from within the team, two ways:
+  - the captain has a **step down** button; the role goes to a random teammate
+  - anyone else can **vote to replace**; at 50 % + 1 of the team (captain included in the count) the role goes to a random *voter*, and the votes clear. Votes are visible on the team screen and to the host.
+- replaceable by the host at any time from the team table
+
+The phone marks the captain with the small hat icon (`assets/ega/hat/`) and shows the player's own name in a different colour on the roster.
+
+**Host client.** Player management gains a team table: rank, team, captain, players, score, and a "new captain" button per team; plus "Assign randomly" (lobby only) and "New captains". The player table shows each player's team and inherits the team's rank and score. The submission tracker's first column becomes the team, with the captain underneath, and the review queue names the team with the captain in brackets.
+
+**Frames** (to add in build step 1): `OPEN_ROOM` / `CLOSE_ROOM` host→server; `JOIN` rejection reason `room_closed`; `TEAM_CREATE {name}`, `TEAM_JOIN {teamId}`, `TEAM_LEAVE`, `CAPTAIN_STEP_DOWN`, `CAPTAIN_VOTE` player→server; `TEAM_ASSIGN {n}`, `TEAM_SET_CAPTAIN {teamId, personId}`, `TEAM_ROTATE` host→server; the lobby snapshot carries every team, its members, captain and current vote count.
+
+**Not decided yet:** whether a team with every phone offline still counts in the close tally; a cap on team size in pick mode; whether the host can rename teams.
+
+---
+
 ## Reilly Birthday Mode
 
 A session setting, off by default, for a party where **every guest brings one question** as a two-slide `.pptx` and **grades it themselves**. The host is a player too.
