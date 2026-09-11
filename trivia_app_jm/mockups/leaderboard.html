@@ -5,6 +5,11 @@
 		<meta name="viewport" content="width=device-width, initial-scale=1" />
 		<title>Trivia — Leaderboard</title>
 		<link rel="stylesheet" href="styles.css" />
+		<!-- the birthday skin and its two switches, applied when <body> carries rbd / mono / strict -->
+		<link rel="stylesheet" href="rbd.css" />
+		<link rel="stylesheet" href="rbd-strict.css" />
+		<link rel="stylesheet" href="rbd-font.css" />
+		<link rel="stylesheet" href="rbd-screens.css" />
 	</head>
 	<body class="board">
 		<!-- The ?view=leaderboard client. Opened as a tab from the host, torn out to
@@ -18,15 +23,20 @@
 			<p class="brand">Trivia</p>
 			<p class="sub" id="sub">Standings</p>
 			<table class="board-table"><tbody id="board"></tbody></table>
-			<p class="note" id="empty" style="display: none">Nothing yet — open <a href="host.html">host.html</a> in another tab and play a question.</p>
+			<p class="note" id="empty" style="display: none">Nothing yet.</p>
 		</div>
+		<script src="live.js"></script>
 		<script>
+			const PARAMS = new URLSearchParams(location.search);
+			const MOCK = PARAMS.has("mock") || location.protocol === "file:";
 			const fmtRank = (r) => (Number.isInteger(r) ? String(r) : r.toFixed(1));
+			let liveData = null; // live: the board's own snapshot, the same shape the mock publishes
 			function render() {
-				let d = null;
-				try {
-					d = JSON.parse(localStorage.getItem("mockStandings") || "null");
-				} catch {}
+				let d = liveData;
+				if (MOCK)
+					try {
+						d = JSON.parse(localStorage.getItem("mockStandings") || "null");
+					} catch {}
 				const tb = document.getElementById("board");
 				tb.innerHTML = "";
 				document.getElementById("empty").style.display = d ? "none" : "block";
@@ -41,9 +51,24 @@
 					tb.appendChild(tr);
 				}
 			}
+			// The board dresses like the phones: the skin, the face and the strict
+			// layer are the room's settings live, and the device wall's flags in the mock.
+			function applySkin(st) {
+				document.body.classList.toggle("rbd", !!st.birthdayMode);
+				document.body.classList.toggle("mono", st.egaFont === "mono");
+				document.body.classList.toggle("strict", !!st.egaStrict);
+			}
+			function mockSkin() {
+				try {
+					applySkin({ birthdayMode: localStorage.getItem("mockRbdSkin") === "1", egaFont: localStorage.getItem("mockEgaFont"), egaStrict: localStorage.getItem("mockEgaStrict") === "1" });
+				} catch {}
+			}
 			window.addEventListener("storage", (e) => {
 				if (e.key === "mockStandings") render();
+				if (MOCK && ["mockRbdSkin", "mockEgaFont", "mockEgaStrict"].includes(e.key)) mockSkin();
 			});
+			if (!MOCK) TriviaLive.connect({ role: "board", onSnapshot: (s) => (applySkin(s.settings ?? {}), (liveData = s), render()) });
+			else mockSkin();
 			render();
 		</script>
 	</body>

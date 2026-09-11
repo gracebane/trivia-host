@@ -1,0 +1,37 @@
+# Static assets are served from the repo root so the mockups stay the source
+# with no build step. Everything is excluded, then the two folders the pages
+# need are let back in, then the heavy working files inside assets/ are kept
+# out (photos, contact sheets, converter experiments).
+*
+!mockups/
+!mockups/**
+!assets/
+!assets/**
+assets/originals/
+assets/ega/frames/
+assets/ega/hat/sheet*.png
+assets/ega/hat/actual-size.png
+assets/ega/hat/src/
+assets/ega/hat/mutiny-blackspot.png
+assets/ega/hat/mutiny-cutlass.png
+assets/ega/hat/mutiny-flag.png
+assets/ega/hat/mutiny-noose.png
+assets/ega/hat/hat-mono-*.png
+assets/ega/hat/captain_ega_pixelated.png
+assets/ega/ega_reilly/IMG_5278*.png
+assets/ega/ega_reilly/ummbazinga.*
+assets/ega/ega_reilly/bazinga_*.png
+assets/ega/ega_reilly/palette-from-portrait.png
+assets/ega/ega_reilly/sheet*.png
+assets/ega/ega_reilly/tile-*.png
+assets/ega/4498d8524a3afb7b053af2b66ba63207.jpg
+assets/ega/ummbazinga.*
+assets/ega/lookatmeiamthecaptainnow.png
+assets/black-pirate-bandana-md.png
+assets/cutout.m
+assets/ega.py
+assets/ega.html
+assets/README.md
+assets/monkey_island_fonts/*/readme.txt
+assets/monkey_island_fonts/*/license.txt
+.DS_Store

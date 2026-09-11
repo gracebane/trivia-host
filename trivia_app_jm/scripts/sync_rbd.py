@@ -35,10 +35,12 @@ BANNER = """\t\t<!-- ===========================================================
 STRICT = """\t\t<script>
 \t\t\t// Strict EGA and the type switch are both layers over the skin, set from
 \t\t\t// the device wall and read here so a fresh frame comes up in the right one.
-\t\t\ttry {
-\t\t\t\tif (localStorage.getItem("mockEgaStrict") === "1") document.body.classList.add("strict");
-\t\t\t\tif (localStorage.getItem("mockEgaFont") === "mono") document.body.classList.add("mono");
-\t\t\t} catch {}
+\t\t\t// Mock only: live, both come from the room with every snapshot.
+\t\t\tif (new URLSearchParams(location.search).has("mock") || location.protocol === "file:")
+\t\t\t\ttry {
+\t\t\t\t\tif (localStorage.getItem("mockEgaStrict") === "1") document.body.classList.add("strict");
+\t\t\t\t\tif (localStorage.getItem("mockEgaFont") === "mono") document.body.classList.add("mono");
+\t\t\t\t} catch {}
 \t\t</script>
 """
 

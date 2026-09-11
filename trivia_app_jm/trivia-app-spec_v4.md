@@ -1,3 +1,8 @@
+> **Read this first.** The HTML mockups in `mockups/` are now authoritative for
+> design and behaviour. This spec is background: the reasoning behind decisions
+> and the parts not built yet (server, D1, archive). Where it contradicts a
+> mockup, the mockup is the more recent decision and this document is stale.
+
 # Trivia App — Spec
 
 *Current state as of this collation. Folds `trivia-app-spec.md`, `trivia-app-decisions_v2.md`, and `trivia-app-decisions_v3.md` into one document; where they conflicted, the newer decision won. Supersedes all three.*

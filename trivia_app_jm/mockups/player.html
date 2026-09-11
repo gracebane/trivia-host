@@ -2,14 +2,25 @@
 <html lang="en">
 	<head>
 		<meta charset="utf-8" />
-		<meta name="viewport" content="width=device-width, initial-scale=1" />
+		<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
 		<title>Trivia — Player</title>
 		<link rel="stylesheet" href="styles.css" />
 	</head>
 	<body class="player">
+		<script src="live.js"></script>
 		<script>
+			// One page, two modes.
+			//   ?mock (or opened as a file): the design playground — the fake engine
+			//   and the simulate bar below, exactly as the mockup always worked.
+			//   otherwise: the live client. The same render functions draw whatever
+			//   the room sends; the adapter at the bottom maps each snapshot onto
+			//   the `game` object those functions already read.
+			const PARAMS = new URLSearchParams(location.search);
+			const MOCK = PARAMS.has("mock") || location.protocol === "file:";
+			document.body.classList.toggle("live", !MOCK);
+			if (PARAMS.has("dev")) document.body.classList.add("dev");
 			// ?embed=1 — rendered inside devices.html, where the iframe is the viewport.
-			if (new URLSearchParams(location.search).get("embed") === "1") document.body.classList.add("embed");
+			if (PARAMS.get("embed") === "1") document.body.classList.add("embed");
 		</script>
 		<!-- Player client in an iPhone frame, matching what the host now does:
 		       · up to six guesses per question, each graded on its own, with a
@@ -32,6 +43,7 @@
 					<span id="whoTop" class="muted"></span>
 					<span id="teamTop" class="muted"></span>
 					<span id="scoreTop" class="muted"></span>
+					<span id="netTop" class="net" style="display: none"></span>
 				</div>
 
 				<!-- REILLY. Birthday skin only. The line floats above his head the way
@@ -70,6 +82,7 @@
 					</div>
 					<ul class="roster" id="teamsRoster" style="display: none"></ul>
 					<p class="muted" id="teamsWait" style="display: none">The host will deal the teams shortly.</p>
+					<a class="plain" href="#" data-switch>Not you?</a>
 				</div>
 
 				<!-- TEAM: your team, its captain, and the captain controls -->
@@ -115,7 +128,7 @@
 				<div class="state" id="s-sitout" style="display: none">
 					<p class="qnum" id="o-label"></p>
 					<h1>This one's yours</h1>
-					<p class="muted">You're grading it, so you sit it out. Nobody scores on their own question.</p>
+					<p class="muted" id="o-note">You're grading it, so you sit it out. Nobody scores on their own question.</p>
 				</div>
 
 				<!-- REVEAL: verdict per guess, points earned, running score -->
@@ -125,7 +138,7 @@
 					<!-- points only if the host lets phones see them; otherwise the leaderboard on the TV is the reveal -->
 					<div id="r-earned" class="earned"></div>
 					<p class="muted" id="r-score">Score: <b><span id="score">0</span></b></p>
-					<p class="muted">Next question coming up…</p>
+					<p class="muted" id="r-next">Next question coming up…</p>
 				</div>
 
 				<!-- CREW BAR: the one captain control, pinned to the bottom. The captain
@@ -147,7 +160,9 @@
 			</div>
 		</div>
 
-		<!-- Mock host controls — NOT part of the phone UI. -->
+		<div class="toast" id="toast" style="display: none"></div>
+
+		<!-- Mock host controls — NOT part of the phone UI. Shown in mock mode, or live with ?dev. -->
 		<div class="simbar">
 			<b>Simulate host</b> (mock only)<br />
 			<button class="btn" data-sim="open">▶ Open question</button>
@@ -163,6 +178,7 @@
 			<br />
 			Teams <select id="teamMode"><option value="off">off</option><option value="pick">players pick</option><option value="random">random</option></select>
 			<label><input type="checkbox" id="rotateToggle" /> Random captain every question</label>
+			<label><input type="checkbox" id="mutinyToggle" checked /> Mutiny</label>
 			<button class="btn" data-sim="deal">Host deals teams</button>
 			<button class="btn" data-sim="mate">Teammate joins</button>
 			<button class="btn" data-sim="matevote">Teammate votes</button>
@@ -192,7 +208,7 @@
 			// ---- What the server's player-scoped QUESTION frame carries: the FORMAT
 			//      of each question and never its text or key. Mirrors the host's
 			//      mock pack. "YOU" marks a Birthday Mode question you wrote yourself.
-			const QUESTIONS = [
+			let QUESTIONS = [
 				{ kind: "single", guesses: 2, points: [8, 4] },
 				{ kind: "single", guesses: 1, points: [8] },
 				{ kind: "list", guesses: 2, pointsPer: 2, rows: 4, cols: 1, orderX: false, orderY: false },
@@ -208,26 +224,29 @@
 			// Shared with index.html so the door and the phone agree about the room.
 			const ROOM_KEY = "mockRoomOpen";
 			// What the host types in session settings. Its own key: the mirrored game
-			// state is written by the phones, this is written by the host.
+			// state is written by the phones, this is written by the host. The value
+			// carries a stamp, so sending the same words twice replays the line.
 			const SAY_KEY = "mockHostSay";
+			const REILLY_KEY = "mockReilly";
+			const reilly = { wordMs: 160, appearOnly: false, leadIn: 2, hold: 5 };
 			// Teams. `teams` is what the server's lobby frame would carry: every team,
 			// its members and its captain. `team` is the name of the one you're on.
 			// votes = who on your team has voted to replace the captain.
-			let game = { name: null, qi: -1, phase: "lobby", guesses: [], grant: false, adding: false, score: 0, live: false, showPts: false, open: true, teamMode: "off", rotate: false, teams: [], team: null, lobby: [], say: "" };
+			let game = { name: null, qi: -1, phase: "lobby", guesses: [], grant: false, adding: false, score: 0, live: false, showPts: false, open: true, teamMode: "off", rotate: false, teams: [], team: null, lobby: [], say: "", mutiny: true, evaluator: null };
 			const MOCK_TEAMS = [
 				{ name: "Quizzards", members: ["Alice", "Bob"], captain: "Alice", votes: [], mutiny: false, mutinies: 0, crew: [] },
 				{ name: "Sofa Kings", members: ["Carol"], captain: "Carol", votes: [], mutiny: false, mutinies: 0, crew: [] },
 			];
-			try {
-				const saved = JSON.parse(localStorage.getItem(KEY) || "null");
-				if (saved) game = { ...game, ...saved };
-			} catch {}
-			try {
-				const r = localStorage.getItem(ROOM_KEY);
-				if (r !== null) game.open = r === "1"; // the door's toggle wins on load
-				const say = localStorage.getItem(SAY_KEY);
-				if (say !== null) game.say = say;
-			} catch {}
+			if (MOCK)
+				try {
+					const saved = JSON.parse(localStorage.getItem(KEY) || "null");
+					if (saved) game = { ...game, ...saved };
+					const r = localStorage.getItem(ROOM_KEY);
+					if (r !== null) game.open = r === "1"; // the door's toggle wins on load
+					const say = localStorage.getItem(SAY_KEY);
+					if (say !== null) game.say = say.startsWith("{") ? JSON.parse(say).text || "" : say;
+					Object.assign(reilly, JSON.parse(localStorage.getItem(REILLY_KEY) || "{}"));
+				} catch {}
 			// Writing only when something actually changed is what stops the mirror
 			// from ping-ponging: an adopted state re-serialises identically, so the
 			// receiving frame writes nothing and the chain ends.
@@ -237,10 +256,11 @@
 				const json = JSON.stringify(game);
 				if (json === lastWrite) return;
 				lastWrite = json;
-				try {
-					localStorage.setItem(KEY, json);
-					localStorage.setItem(ROOM_KEY, game.open ? "1" : "0");
-				} catch {}
+				if (MOCK)
+					try {
+						localStorage.setItem(KEY, json);
+						localStorage.setItem(ROOM_KEY, game.open ? "1" : "0");
+					} catch {}
 				// On the device wall the parent is the bus: it relays this to every
 				// other phone. postMessage works from file:// too, where a parent
 				// page is not allowed to reach into its iframes directly.
@@ -262,9 +282,19 @@
 			// storage event when the browser fires it, via the parent otherwise.
 			window.addEventListener("storage", (e) => e.key === KEY && adopt(e.newValue));
 			window.addEventListener("storage", (e) => {
+				if (e.key === REILLY_KEY) {
+					try {
+						Object.assign(reilly, JSON.parse(e.newValue || "{}"));
+					} catch {}
+					return render();
+				}
 				if (e.key !== SAY_KEY) return;
-				game.say = e.newValue || "";
-				render();
+				let text = e.newValue || "";
+				try {
+					if (text.startsWith("{")) text = JSON.parse(text).text || "";
+				} catch {}
+				game.say = text;
+				speak(text);
 			});
 			window.addEventListener("message", (e) => {
 				const m = e.data || {};
@@ -298,12 +328,20 @@
 			// way the vote went. A step-down clears everything back to the plain hat.
 			// The black tricorn is drawn on odd widths (a centred skull needs a middle
 			// column), so it is the one icon whose file is 17 rather than 16.
-			const ICON_W = { "hat-pirate": 25 }; // odd width: a centred skull needs a middle column
+			const ICON_W = { "hat-pirate": 25, star: 25 }; // odd widths: a centred skull, or a star's top point, needs a middle column
 			const ICON = (kind, title) => {
 				const base = kind.replace(/-(red|green)$/, "");
 				return `<img class="hat ${base}" src="../assets/ega/hat/${kind}-${ICON_W[base] ?? 24}.png" alt="${title}" title="${title}" />`;
 			};
 			const HAT = ICON("hat-navy", "captain");
+			// Birthday Mode: the author of the question on the table is grading it. They
+			// wear the star instead of any hat, and their team plays on without them.
+			const STAR = ICON("star", "grading this question");
+			const evaluatorName = () => {
+				if (!MOCK) return game.evaluator;
+				const x = q();
+				return x?.author ? (x.author === "YOU" ? game.name : x.author) : null;
+			};
 			// Mutinies alternate colour so a crew can tell one uprising from the next:
 			// the first is red, the second green, the third red again.
 			const crewColour = (n) => (n % 2 === 1 ? "red" : "green");
@@ -311,6 +349,7 @@
 			const nth = (n) => ORDINAL[n] ?? `${n}th`;
 			function headgear(t, m) {
 				if (!t) return "";
+				if (m === evaluatorName() && game.phase !== "lobby") return STAR;
 				const done = t.mutinies || 0;
 				if (m === t.captain) return done ? ICON(`hat-pirate-${crewColour(done)}`, `captain by the ${nth(done)} mutiny`) : HAT;
 				if (t.votes.includes(m)) return ICON(`bandana-${crewColour(done + 1)}`, "voted to replace the captain");
@@ -319,7 +358,8 @@
 			}
 			const isList = (x) => x.kind === "list";
 			const mine = (x) => x.author === "YOU";
-			const qLabel = (x) => (x.author ? `${x.author === "YOU" ? "Your" : x.author + "'s"} question` : `Question ${game.qi + 1}`);
+			// The server names the question (its number, or its author in Birthday Mode); the mock counts.
+			const qLabel = (x) => (x.author ? `${x.author === "YOU" ? "Your" : x.author + "'s"} question` : `Question ${x.label ?? game.qi + 1}`);
 			const pointsFor = (x, g) => (isList(x) ? null : x.points[Math.min(g, x.points.length) - 1]);
 			const canGuessMore = (x) => game.phase === "collecting" && game.guesses.length < x.guesses;
 
@@ -329,7 +369,8 @@
 			// once. When a question is up the answer wins: the crew list stands down
 			// and the portrait shrinks. The roster is a glance, the answer is the job.
 			const SHORT = () => window.matchMedia("(max-height: 780px)").matches;
-			const IN_QUESTION = ["answer", "submitted", "captain", "reveal"];
+			// sitout belongs here too: it is a question screen, it just is not yours.
+			const IN_QUESTION = ["answer", "submitted", "captain", "sitout", "reveal"];
 			function show(state) {
 				for (const s of STATES) $("#s-" + s).style.display = s === state ? "flex" : "none";
 				document.body.classList.toggle("q", IN_QUESTION.includes(state));
@@ -338,13 +379,69 @@
 				renderCrewbar();
 				renderMutiny();
 			}
-			// He is on every screen from the moment you're in the game, and the line
-			// above his head keeps its height whether or not there is anything in it.
-			// Showing him only when he speaks made the whole screen jump each time.
+			// ---- Reilly speaks ----
+			// A line arrives whole and is delivered a word at a time, the way SCUMM
+			// dialogue crawls out. The partial text is deliberately LOCAL: putting it
+			// in the mirrored state would write to storage on every word and make the
+			// phones fight each other. Each phone runs the same clock from the same
+			// event instead, which keeps them together without the chatter.
+			const speech = { words: [], shown: "", phase: "idle", tick: null };
+			function stopSpeaking() {
+				clearInterval(speech.tick);
+				speech.tick = null;
+			}
+			// One ticker, and every step is derived from ELAPSED time rather than from
+			// a chain of per-word timeouts. A phone that throttles its timers (screen
+			// off, tab in the background, a slow moment) then catches up to where the
+			// line should be instead of finishing seconds late. Chrome throttles
+			// background frames to roughly one tick a second, which is exactly the
+			// case that made the chained version drift.
+			function speak(text) {
+				stopSpeaking();
+				text = (text || "").trim();
+				speech.shown = "";
+				if (!text) {
+					speech.phase = "idle";
+					return render();
+				}
+				speech.words = text.split(/\s+/);
+				const lead = reilly.appearOnly ? reilly.leadIn * 1000 : 0;
+				const talk = speech.words.length * reilly.wordMs;
+				const ends = lead + talk + (reilly.appearOnly ? reilly.hold * 1000 : 0);
+				const t0 = Date.now();
+				speech.phase = reilly.appearOnly ? "lead" : "talking";
+				render();
+
+				const frame = () => {
+					const t = Date.now() - t0;
+					const want = t < lead ? 0 : Math.min(speech.words.length, Math.floor((t - lead) / reilly.wordMs) + 1);
+					const shown = speech.words.slice(0, want).join(" ");
+					const phase = t < lead ? "lead" : t < lead + talk ? "talking" : "held";
+					if (shown !== speech.shown) {
+						speech.shown = shown;
+						$("#sayLine").textContent = shown;
+					}
+					if (phase !== speech.phase) {
+						speech.phase = phase;
+						render();
+					}
+					// only a Reilly who came to speak ever leaves again
+					if (reilly.appearOnly && t >= ends) {
+						stopSpeaking();
+						speech.phase = "idle";
+						speech.shown = "";
+						render();
+					}
+				};
+				speech.tick = setInterval(frame, Math.max(16, Math.min(reilly.wordMs, 60)));
+				frame();
+			}
 			function renderReilly(state) {
-				const on = document.body.classList.contains("rbd") && game.name && !["join", "teams"].includes(state);
+				const place = document.body.classList.contains("rbd") && game.name && !["join", "teams"].includes(state);
+				// when he only turns up to talk, an idle Reilly is no Reilly at all
+				const on = place && (!reilly.appearOnly || speech.phase !== "idle");
 				$("#reilly").classList.toggle("on", on);
-				$("#sayLine").textContent = (game.say || "").trim();
+				$("#sayLine").textContent = speech.shown;
 			}
 			function renderCrew() {
 				const el = $("#crewlist");
@@ -365,8 +462,9 @@
 				$("#openToggle").checked = game.open;
 				$("#teamMode").value = game.teamMode;
 				$("#rotateToggle").checked = game.rotate;
+				$("#mutinyToggle").checked = game.mutiny;
 				$("#jump").value = String(game.qi);
-				if (!game.name) {
+				if (!game.name || switching) {
 					renderJoin();
 					return show("join");
 				}
@@ -377,6 +475,8 @@
 				if (game.phase === "revealing") return renderReveal(x);
 				if (mine(x)) {
 					$("#o-label").textContent = qLabel(x);
+					const t = teamsOn() ? myTeam() : null;
+					$("#o-note").textContent = t ? `You're grading it, so you sit it out. ${t.captain} answers for ${t.name} without you.` : "You're grading it, so you sit it out. Nobody scores on their own question.";
 					return show("sitout");
 				}
 				if (!canAnswer()) return renderCaptain(x);
@@ -419,6 +519,7 @@
 			function joinTeam(nm) {
 				const t = game.teams.find((x) => x.name === nm);
 				if (!t) return;
+				if (!MOCK) return live.send({ t: "team.join", teamId: t.id });
 				leaveTeam();
 				t.members.push(game.name);
 				if (!t.captain) t.captain = game.name; // first in is captain
@@ -437,6 +538,7 @@
 			function newTeam() {
 				const nm = $("#teamName").value.trim();
 				if (!nm) return $("#teamName").focus();
+				if (!MOCK) return (($("#teamName").value = ""), live.send({ t: "team.create", name: nm }));
 				if (game.teams.some((t) => t.name.toLowerCase() === nm.toLowerCase())) return joinTeam(game.teams.find((t) => t.name.toLowerCase() === nm.toLowerCase()).name);
 				game.teams.push({ name: nm, members: [], captain: null, votes: [], mutiny: false, mutinies: 0, crew: [] });
 				$("#teamName").value = "";
@@ -451,7 +553,8 @@
 			function renderCrewbar() {
 				const bar = $("#crewbar");
 				const t = myTeam();
-				const show = teamsOn() && t && game.name && !["join", "teams"].includes(visibleScreen());
+				// with mutinies off there is nothing for a non-captain to press
+				const show = teamsOn() && t && game.name && !["join", "teams"].includes(visibleScreen()) && (isCaptain() || game.mutiny);
 				bar.style.display = show ? "" : "none";
 				bar.classList.toggle("corner", show && t.members.length >= 2 && !isCaptain());
 				if (!show) return;
@@ -464,9 +567,9 @@
 					bar.innerHTML = `<button class="iconbtn ${on ? "on" : ""}" id="voteBtn" title="${on ? "take my vote back" : "vote to replace " + t.captain}" aria-label="${on ? "take my vote back" : "vote to replace the captain"}"><img src="../assets/ega/hat/mutiny-plank-24.png" alt="" /></button>`;
 				}
 				const sd = bar.querySelector("#stepDown");
-				if (sd) sd.onclick = () => (stepDown(t), render());
+				if (sd) sd.onclick = () => (MOCK ? (stepDown(t), render()) : live.send({ t: "captain.stepDown" }));
 				const vb = bar.querySelector("#voteBtn");
-				if (vb) vb.onclick = () => (vote(t, game.name), render());
+				if (vb) vb.onclick = () => (MOCK ? (vote(t, game.name), render()) : live.send({ t: "captain.vote" }));
 			}
 			const randomOther = (t, not, from) => {
 				const c = (from ?? t.members).filter((m) => m !== not);
@@ -504,7 +607,7 @@
 			function renderMutiny() {
 				const box = $("#mutinyPanel");
 				const t = myTeam();
-				const on = teamsOn() && t && game.name && t.members.includes(game.name) && !["join", "teams"].includes(visibleScreen());
+				const on = game.mutiny && teamsOn() && t && game.name && t.members.includes(game.name) && !["join", "teams"].includes(visibleScreen());
 				const pending = on && t.votes.length > 0;
 				const settled = on && t.mutiny && !pending;
 				box.style.display = pending || settled ? "" : "none";
@@ -543,21 +646,29 @@
 			}
 
 			// The format line: everything the player needs to answer well, in one line.
+			// The grid itself shows the shape, so the line only says what the boxes
+			// cannot: guesses, order, and what it is worth when the host shows that.
 			function formatLine(x, guessNo) {
+				const showPts = x.showPoints !== false;
 				if (isList(x)) {
-					const shape = x.cols > 1 ? `${x.rows} rows of ${x.cols}` : `List of ${x.rows}`;
 					const order = [x.orderX && x.cols > 1 ? "order matters across →" : "", x.orderY && x.rows > 1 ? "order matters down ↓" : ""].filter(Boolean).join(" · ");
-					const g = x.guesses > 1 ? ` · guess ${guessNo} of ${x.guesses}` : "";
-					return `${shape} · ${x.pointsPer} pts each${g}${order ? " · " + order : ""}`;
+					return [x.guesses > 1 ? `Guess ${guessNo} of ${x.guesses}` : "", showPts ? `${x.pointsPer} pts each` : "", order].filter(Boolean).join(" · ");
 				}
-				const pts = pointsFor(x, guessNo);
-				return x.guesses > 1 ? `Guess ${guessNo} of ${x.guesses} · ${pts} pts` : `One guess · ${pts} pts`;
+				const pts = showPts ? ` · ${pointsFor(x, guessNo)} pts` : "";
+				return x.guesses > 1 ? `Guess ${guessNo} of ${x.guesses}${pts}` : `One guess${pts}`;
 			}
 
 			// The input: a textbox for a single answer, a grid the shape of the host's
 			// answer grid for a list. Prefilled when a guess is being replaced.
-			function buildInput(x, prefill) {
+			function buildInput(x, prefill, key) {
 				const box = $("#a-input");
+				// Live, a snapshot lands every time anyone in the room does anything.
+				// Rebuilding the box on each one threw away what was being typed and
+				// re-focused the field, which bounced the keyboard. The box is only
+				// rebuilt when the thing it is for changes: the question, the guess
+				// number, or a send-back with its prefill.
+				if (key && box.dataset.key === key && box.querySelector("input")) return;
+				box.dataset.key = key || "";
 				box.innerHTML = "";
 				if (!isList(x)) {
 					const inp = document.createElement("input");
@@ -592,7 +703,7 @@
 				$("#a-label").textContent = qLabel(x);
 				$("#a-sendback").style.display = replacing ? "block" : "none";
 				$("#a-format").textContent = formatLine(x, guessNo);
-				buildInput(x, replacing ? game.guesses[game.guesses.length - 1].payload : null);
+				buildInput(x, replacing ? game.guesses[game.guesses.length - 1].payload : null, `${x.id}|${x.kind}|${x.rows}x${x.cols}|${guessNo}|${replacing ? "r" : ""}|${game.adding ? "a" : ""}`);
 				$("#submitBtn").textContent = replacing ? "Resubmit" : guessNo > 1 ? `Send guess ${guessNo}` : "Submit";
 				$("#a-cancel").style.display = game.adding ? "" : "none";
 				show("answer");
@@ -637,7 +748,7 @@
 				if (more) {
 					const n = game.guesses.length + 1;
 					const pts = pointsFor(x, n);
-					again.textContent = `Another guess${pts !== null ? ` · ${pts} pts` : ""} (${x.guesses - game.guesses.length} left)`;
+					again.textContent = `Another guess${pts !== null && x.showPoints !== false ? ` · ${pts} pts` : ""} (${x.guesses - game.guesses.length} left)`;
 				}
 				$("#s-wait").textContent = more ? "" : "Waiting for the host…";
 				show("submitted");
@@ -663,6 +774,7 @@
 			// Same fold as the host: earliest correct guess for a single answer, best
 			// confirmed guess for a list. Ungraded at reveal counts as nothing.
 			function earned(x) {
+				if (!MOCK) return game.earned ?? 0;
 				if (isList(x)) {
 					const best = Math.max(0, ...game.guesses.map((g) => g.verdict?.count ?? 0));
 					return best * x.pointsPer;
@@ -676,6 +788,10 @@
 				const x = q();
 				const payload = readInput(x);
 				if (payloadEmpty(payload)) return;
+				if (!MOCK) {
+					game.adding = false;
+					return live.send({ t: "answer", questionId: x.id, payload });
+				}
 				if (game.grant) {
 					game.guesses[game.guesses.length - 1] = { payload, verdict: null }; // send-back replaces the latest
 					game.grant = false;
@@ -724,15 +840,18 @@
 				hint = localStorage.getItem("mockPerson");
 			} catch {}
 			let joinMode = hint ? "returning" : null; // a known phone lands straight on its name
+			let switching = false; // live: "Not you?" shows the door without leaving the game
 			function renderRoster() {
 				sel.innerHTML = "";
-				for (const p of [...roster.filter((p) => !p.live), ...roster.filter((p) => p.live)]) {
+				const list = MOCK ? roster : game.roster ?? [];
+				for (const p of [...list.filter((p) => !p.live), ...list.filter((p) => p.live)]) {
 					const o = document.createElement("option");
-					o.value = p.name;
-					o.textContent = p.live ? p.name + " (live)" : p.name;
-					if (p.name === hint) o.selected = true;
+					o.value = MOCK ? p.name : p.personId;
+					o.textContent = p.live ? p.name + " (in the game)" : p.name;
+					if (MOCK ? p.name === hint : p.personId === game.hintId) o.selected = true;
 					sel.appendChild(o);
 				}
+				if (!list.length) sel.innerHTML = `<option value="">nobody yet — join as new</option>`;
 			}
 			function renderJoin() {
 				$("#chooseReturning").classList.toggle("on", joinMode === "returning");
@@ -742,14 +861,28 @@
 				$("#joinBtn").style.display = joinMode ? "" : "none";
 				$("#joinBtn").disabled = !game.open;
 				$("#closedNote").style.display = game.open ? "none" : "";
+				$("#closedNote").textContent = game.phase && game.phase !== "lobby" ? "The host has closed the room for now." : "The host hasn't opened the room yet.";
 				$("#joinBtn").textContent = !game.open ? "Room closed" : joinMode === "new" ? "Join as new player" : "Join";
-				if (joinMode === "new") newInput.focus();
+				// focus once, when the door opens; not again on every redraw
+				if (joinMode === "new" && document.activeElement !== newInput && !isTyping()) newInput.focus();
 			}
+			const isTyping = () => {
+				const a = document.activeElement;
+				return !!a && (a.tagName === "TEXTAREA" || (a.tagName === "INPUT" && ["text", "number", "search"].includes(a.type)));
+			};
 			$("#chooseReturning").onclick = () => { joinMode = "returning"; renderJoin(); };
 			$("#chooseNew").onclick = () => { joinMode = "new"; renderJoin(); };
 			newInput.addEventListener("keydown", (e) => e.key === "Enter" && $("#joinBtn").click());
 			$("#joinBtn").onclick = () => {
 				if (!game.open) return; // server: JOIN rejected until the host opens the room
+				if (!MOCK) {
+					if (joinMode === "new") {
+						const nm = newInput.value.trim();
+						if (!nm) return newInput.focus();
+						return live.send({ t: "join", displayName: nm });
+					}
+					return sel.value && live.send({ t: "join", personId: sel.value });
+				}
 				let who;
 				if (joinMode === "new") {
 					who = newInput.value.trim();
@@ -771,6 +904,13 @@
 			document.querySelectorAll("[data-switch]").forEach((el) =>
 				el.addEventListener("click", (e) => {
 					e.preventDefault();
+					if (!MOCK) {
+						// show the door again; the next join re-points this phone
+						switching = true;
+						joinMode = "returning";
+						renderRoster();
+						return render();
+					}
 					leaveTeam();
 					game.name = null;
 					joinMode = "returning";
@@ -800,6 +940,11 @@
 			};
 			$("#openToggle").onchange = (e) => {
 				game.open = e.target.checked;
+				render();
+			};
+			$("#mutinyToggle").onchange = (e) => {
+				game.mutiny = e.target.checked;
+				if (!game.mutiny) game.teams.forEach((t) => (t.votes = []));
 				render();
 			};
 			$("#rotateToggle").onchange = (e) => {
@@ -859,11 +1004,11 @@
 						return render();
 					}
 					if (act === "say" || act === "hush") {
-						game.say = act === "say" ? $("#sayInput").value : "";
+						game.say = act === "say" ? $("#sayInput").value.trim() : "";
 						try {
-							localStorage.setItem(SAY_KEY, game.say);
+							localStorage.setItem(SAY_KEY, JSON.stringify({ text: game.say, at: Date.now() }));
 						} catch {}
-						return render();
+						return speak(game.say);
 					}
 					if (act === "mate" || act === "matevote" || act === "mutiny") {
 						const t = myTeam();
@@ -903,9 +1048,102 @@
 				}),
 			);
 
+			// ---- live: the room's snapshot becomes the page's `game` ----------
+			// The render functions above were written against `game`; the adapter
+			// keeps them ignorant of the socket. Every snapshot replaces the whole
+			// object, so a phone waking from sleep is drawn from the present.
+			let live = null;
+			let lastSayAt = 0;
+			let toastTimer;
+			function toast(msg) {
+				const el = $("#toast");
+				el.textContent = msg;
+				el.style.display = "block";
+				clearTimeout(toastTimer);
+				toastTimer = setTimeout(() => (el.style.display = "none"), 2600);
+			}
+			function adoptSnapshot(s) {
+				const st = s.settings ?? {};
+				// The birthday skin is its own page (rbd.css and friends, generated from
+				// this one), so a phone follows the room's setting: the plain page hops
+				// to the birthday one when the mode is on, and back when it's off.
+				const wantRbd = !!st.birthdayMode;
+				if (wantRbd !== document.body.classList.contains("rbd")) return location.replace((wantRbd ? "rbd_player.html" : "player.html") + location.search);
+				Object.assign(reilly, st.reilly ?? {});
+				if (st.egaFont) document.body.classList.toggle("mono", st.egaFont === "mono");
+				document.body.classList.toggle("strict", !!st.egaStrict);
+				const you = s.you?.name ?? null;
+				if (you && you !== game.name) switching = false;
+				const qn = s.question;
+				QUESTIONS = qn ? [{ ...qn, author: qn.yours ? "YOU" : qn.author || null, points: qn.points ?? [], pointsPer: qn.pointsPer ?? 0, rows: qn.rows ?? 1, cols: qn.cols ?? 1 }] : [];
+				const guesses = (s.guesses ?? []).map((g) => ({ payload: g.payload, verdict: g.verdict }));
+				const same = JSON.stringify(guesses) === JSON.stringify(game.guesses);
+				game = {
+					...game,
+					name: you,
+					roster: (s.roster ?? []).map((p) => ({ name: p.displayName, live: p.live, personId: p.personId })),
+					hintId: s.hint?.personId ?? null,
+					open: !!s.open,
+					phase: s.phase === "lobby" ? "lobby" : s.phase === "collecting" ? "collecting" : "revealing",
+					ended: s.phase === "ended",
+					qi: qn ? 0 : -1,
+					guesses,
+					grant: !!s.grant,
+					adding: same ? game.adding : false, // a new guess landed: back to the list
+					earned: s.earned,
+					score: s.score ?? 0,
+					showPts: !!st.showPointsOnPhones && "earned" in s,
+					live: !!st.showVerdictsLive,
+					teamMode: st.teamMode ?? "off",
+					teams: s.teams ?? [],
+					mutiny: st.mutiny !== false,
+					evaluator: s.question?.evaluator ?? null,
+					team: s.team?.name ?? null,
+					lobby: s.lobby ?? [],
+					say: s.say?.text ?? "",
+				};
+				// the last reveal of the night shouldn't promise another question
+				$("#r-next").textContent = s.phase === "ended" ? "That's the game — final standings are on the board." : "Next question coming up…";
+				if (you) document.querySelectorAll(".who").forEach((el) => (el.textContent = you));
+				renderRoster();
+				if (!switching || you == null) hint = you ?? hint;
+				if (s.say?.at && s.say.at !== lastSayAt) {
+					lastSayAt = s.say.at;
+					speak(s.say.text);
+				} else render();
+			}
+			if (!MOCK) {
+				live = TriviaLive.connect({
+					role: "player",
+					device: PARAMS.get("device"),
+					onSnapshot: adoptSnapshot,
+					onFrame: (m) => {
+						if (m.t === "say") {
+							lastSayAt = m.at;
+							game.say = m.text;
+							speak(m.text);
+						} else if (m.t === "grant") {
+							game.adding = false;
+							game.grant = true;
+							render();
+						}
+					},
+					onError: (e) => toast(e.message),
+					onStatus: (status) => {
+						const el = $("#netTop");
+						el.textContent = status === "live" ? "" : status === "failed" ? "can't reach the game" : status + "…";
+						el.style.display = status === "live" ? "none" : "";
+					},
+				});
+				// the room's roster arrives with the first snapshot; until then, the door waits
+				game.open = false;
+				renderJoin();
+			}
+
 			renderRoster();
 			if (game.name) document.querySelectorAll(".who").forEach((el) => (el.textContent = game.name));
 			render();
+			if (MOCK && game.say) speak(game.say);
 			announce();
 		</script>
 	</body>

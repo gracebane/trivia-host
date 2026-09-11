@@ -108,7 +108,8 @@ body.rbd .phone {
 	box-shadow: 0 0 0 4px var(--ega-dark);
 }
 
-body.rbd.embed .phone {
+body.rbd.embed .phone,
+body.rbd.live .phone {
 	box-shadow: none;
 }
 
@@ -367,8 +368,13 @@ body.rbd #crewlist li {
 	}
 }
 
-/* With a question up on a short phone, Reilly steps back so the answer box and
-   the buttons keep their room. He stays on screen — he just gets smaller. */
+/* With a question up, Reilly steps back so the answer box and the buttons keep
+   their room. This is not a small-screen rule: a 4-row list grid plus a six-name
+   crew list overran the 844 and 852 phones too. He stays on screen everywhere,
+   he just gets smaller while there is a question to answer. */
+body.rbd.q #reilly .portrait {
+	max-height: 15vh;
+}
 @media (max-height: 780px) {
 	body.rbd.q #reilly .portrait {
 		max-height: 11vh;

@@ -1,0 +1,98 @@
+<!doctype html>
+<html lang="en">
+	<head>
+		<meta charset="utf-8" />
+		<meta name="viewport" content="width=device-width, initial-scale=1" />
+		<title>M0 — Player</title>
+		<link rel="stylesheet" href="style.css" />
+	</head>
+	<body>
+		<!-- M0 test page. Throwaway: M8 replaces it with the real player.html. -->
+		<main>
+			<div class="bar"><span>Trivia · M0 player</span><span class="pill" id="pill">connecting</span></div>
+			<div class="card" id="view"><p class="muted">Connecting…</p></div>
+			<div class="card">
+				<h2>Connection log</h2>
+				<div class="log" id="log"></div>
+			</div>
+		</main>
+		<script src="../live.js"></script>
+		<script type="module">
+			const { connect } = window.TriviaLive;
+			const $ = (s) => document.querySelector(s);
+			const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]);
+			let state = null;
+			let draft = "";
+
+			const room = connect({
+				role: "player",
+				onSnapshot: (s) => ((state = s), render()),
+				onError: (e) => toast(e.message),
+				onStatus: (status, events) => {
+					$("#pill").textContent = status;
+					$("#pill").className = "pill " + status;
+					$("#log").textContent = events.join("\n");
+				},
+			});
+
+			function render() {
+				const v = $("#view");
+				if (!state.you) {
+					if (!state.open) {
+						v.innerHTML = `<h1>Room not open</h1><p class="muted">The host hasn't opened the room yet.</p>`;
+						return;
+					}
+					v.innerHTML = `<h1>Who are you?</h1>
+						<input type="text" id="name" placeholder="Your name" autocomplete="off" />
+						<button id="join">Join</button>`;
+					$("#join").onclick = () => room.send({ t: "join", displayName: $("#name").value });
+					$("#name").addEventListener("keydown", (e) => {
+						if (e.key === "Enter") $("#join").click();
+					});
+					return;
+				}
+				const hi = `<p class="muted">You're <b>${esc(state.you.name)}</b></p>`;
+				if (state.phase === "lobby" || !state.question) {
+					v.innerHTML = `${hi}<h1>Waiting for the first question…</h1>`;
+				} else if (state.phase === "collecting") {
+					const sent = state.guesses?.map((g) => g.payload.text ?? g.payload.items?.join(", ")) ?? [];
+					const more = state.grant || sent.length < state.question.guesses;
+					v.innerHTML = `${hi}<h2>Question ${esc(state.question.label)}</h2>
+						<p class="muted">${state.question.kind === "list" ? `List of ${state.question.rows}×${state.question.cols}, comma-separated` : `Guess ${Math.min(sent.length + 1, state.question.guesses)} of ${state.question.guesses}`}</p>
+						${more ? `<input type="text" id="ans" placeholder="Your answer" autocomplete="off" value="${esc(draft)}" /><button id="send">${state.grant ? "Resubmit" : sent.length ? "Send another guess" : "Submit"}</button>` : `<p class="muted">All guesses used. Waiting for the host…</p>`}
+						${sent.map((t, i) => `<p class="muted">Guess ${i + 1}: <b>${esc(t)}</b></p>`).join("")}`;
+					if (!more) return;
+					$("#ans").oninput = (e) => (draft = e.target.value);
+					$("#send").onclick = () => {
+						const text = $("#ans").value;
+						const payload = state.question.kind === "list" ? { items: text.split(",") } : { text };
+						room.send({ t: "answer", questionId: state.question.id, payload });
+						draft = "";
+					};
+					$("#ans").addEventListener("keydown", (e) => {
+						if (e.key === "Enter") $("#send").click();
+					});
+				} else {
+					const rows = (state.guesses ?? []).map((g) => {
+						const t = g.payload.text ?? g.payload.items?.join(", ");
+						const v = g.verdict;
+						const mark = !v || v.state === null ? `<span class="muted">not marked</span>` : v.state === "correct" ? `<span class="ok">✓${v.count != null ? ` ${v.count}` : ""}</span>` : `<span class="no">✗</span>`;
+						return `<p>Guess ${g.guessNo}: <b>${esc(t)}</b> ${mark}</p>`;
+					});
+					const pts = "earned" in state ? `<p class="ok">+${state.earned} · score ${state.score}</p>` : "";
+					v.innerHTML = `${hi}<h2>Question ${esc(state.question.label)} — result</h2>${rows.join("") || `<p class="muted">No answer</p>`}${pts}`;
+				}
+			}
+
+			let tt;
+			function toast(msg) {
+				let el = document.querySelector(".toast");
+				if (!el) document.body.append((el = Object.assign(document.createElement("div"), { className: "toast" })));
+				el.textContent = msg;
+				el.hidden = false;
+				clearTimeout(tt);
+				tt = setTimeout(() => (el.hidden = true), 2500);
+			}
+		</script>
+	</body>
+</html>

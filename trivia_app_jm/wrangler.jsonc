@@ -23,6 +23,16 @@
 			}
 		]
 	},
+	// Pages are static assets. Only the socket endpoint reaches the Worker first;
+	// everything else is served straight from public/ without running any code.
+	// Pages are served straight from mockups/ (they are the design source; no
+	// build step). .assetsignore at the root keeps everything else out. The
+	// friendly routes below run the Worker first so it can map them to files.
+	"assets": {
+		"directory": "./",
+		"binding": "ASSETS",
+		"run_worker_first": ["/ws", "/", "/play", "/play/*", "/host", "/board", "/wall", "/m0/*"]
+	},
 	"observability": {
 		"enabled": true
 	},

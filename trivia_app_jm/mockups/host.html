@@ -7,6 +7,15 @@
 		<link rel="stylesheet" href="styles.css" />
 	</head>
 	<body class="host">
+		<script src="live.js"></script>
+		<script>
+			// One page, two modes. ?mock (or a file URL): the design playground on
+			// the fake room below. Otherwise: the live controller, on the socket.
+			const PARAMS = new URLSearchParams(location.search);
+			const MOCK = PARAMS.has("mock") || location.protocol === "file:";
+			document.body.classList.toggle("live", !MOCK);
+			if (PARAMS.has("dev")) document.body.classList.add("dev");
+		</script>
 		<!-- Host controller mockup, laptop-primary. Spec v4 "Host client structure":
 		     four tabs — slide tracker · guess evaluator · player management ·
 		     session settings. No timers: the submission tracker is the only
@@ -17,7 +26,7 @@
 
 		<div class="hostwrap">
 			<div class="hostbar">
-				<div class="hostbar-mid" id="status"></div>
+				<div class="hostbar-mid"><span id="netHost" class="net" style="display: none"></span><span id="status"></span></div>
 				<div>
 					<button id="handoffTop" class="primary" style="display: none"></button>
 					<button id="nextBtn">Next question ›</button>
@@ -221,6 +230,13 @@
 					</section>
 
 					<section class="panel">
+						<h2>Join screen</h2>
+						<div class="settingrow"><a class="btn" id="openJoin" href="index.html?tv=1" target="_blank">Open join screen</a></div>
+						<div class="settingrow"><code id="joinUrl"></code></div>
+						<div class="settingrow muted">The address and the code for the TV, dressed like the phones. No button, no host door.</div>
+					</section>
+
+					<section class="panel">
 						<h2>Room</h2>
 						<div class="settingrow"><button id="openBtn"></button> <span class="muted" id="openHint"></span></div>
 					</section>
@@ -234,17 +250,18 @@
 						</select></div>
 						<div class="settingrow teams-only"><label>Max per team <input type="number" id="teamMax" min="2" max="10" class="short" /></label> <span class="muted">(random)</span></div>
 						<div class="settingrow teams-only"><label><input type="checkbox" id="rotateEachRound" /> Random captain every question</label></div>
+						<div class="settingrow teams-only"><label><input type="checkbox" id="mutiny" /> Crews can mutiny</label> <span class="muted">50 % + 1 of a team votes the captain out</span></div>
 						<div class="settingrow teams-only"><button id="dealBtn">Deal teams</button> <span class="muted" id="dealHint"></span></div>
 					</section>
 
-					<section class="panel wide">
-						<h2>Phones</h2>
+					<section class="panel wide bday-only">
+						<h2>Reilly</h2>
 						<div class="settingrow">
 							<label>Type <select id="egaFont" class="short">
 								<option value="scumm">SCUMM</option>
 								<option value="mono">DOS mono</option>
 							</select></label>
-							<span class="muted">Birthday Mode only</span>
+							&nbsp; <label><input type="checkbox" id="egaStrict" /> Strict EGA</label> <span class="muted">black ground, one text size, verbs not buttons</span>
 						</div>
 						<div class="settingrow">
 							<label>Message <input type="text" id="hostSay" placeholder="say something to every phone…" maxlength="120" /></label>
@@ -252,18 +269,39 @@
 							<button id="sayClear">Clear</button>
 						</div>
 						<div class="settingrow muted" id="sayNote"></div>
+
+						<h3>Delivery</h3>
+						<div class="settingrow">
+							<label>Speed <input type="range" id="wordMs" min="60" max="600" step="20" /></label>
+							<span class="muted" id="wordMsNote"></span>
+						</div>
+						<div class="settingrow">
+							<label><input type="checkbox" id="appearOnly" /> Only on screen when he speaks</label>
+						</div>
+						<div class="settingrow" id="timingRow">
+							<label>Waits <input type="number" id="leadIn" min="0" max="10" step="0.5" class="short" /> s before starting</label>
+							&nbsp;
+							<label>holds <input type="number" id="holdFor" min="0" max="20" step="0.5" class="short" /> s after</label>
+						</div>
+						<div class="settingrow">
+							<button id="sayPreview">Preview</button>
+							<span class="muted">how it will land on a phone</span>
+						</div>
+						<div class="saystage" id="sayStage"><span id="sayStageLine"></span><span class="muted" id="sayStagePhase"></span></div>
 					</section>
 
 					<section class="panel">
 						<h2>Access</h2>
-						<div class="settingrow">Player <code>imstupid</code></div>
 						<div class="settingrow">Host <code>imwithstupid</code></div>
 						<div class="settingrow"><a class="plain" id="signOut" href="index.html">Sign out</a></div>
 					</section>
 
 					<section class="panel">
 						<h2>Game</h2>
-						<div class="settingrow"><button id="endBtn2" class="danger">End game</button></div>
+						<div class="settingrow">
+							<button id="endBtn2" class="danger">End game</button>
+							&nbsp; <button id="newGameBtn">New game</button> <span class="muted">back to the lobby with the same people; guesses, teams and standings cleared</span>
+						</div>
 					</section>
 
 					<section class="panel wide">
@@ -384,7 +422,7 @@
 			// Resubmission grants: per-player, only while the question is open.
 			const grants = new Set();
 
-			const settings = { teamMode: "off", teamMax: 4, rotateEachRound: false, autoPassFuzzy: false, showVerdictsLive: false, showScores: true, showPointsOnPhones: false, sharedRank: true, birthdayMode: false, defaultGuesses: 2, defaultSchedule: [8, 8], defaultAutograde: true, defaultThreshold: "auto", defaultKind: "single", defaultPointsPer: 2, defaultOrderX: false, defaultOrderY: false };
+			const settings = { teamMode: "off", teamMax: 4, rotateEachRound: false, mutiny: true, autoPassFuzzy: false, showVerdictsLive: false, showScores: true, showPointsOnPhones: false, sharedRank: true, birthdayMode: false, defaultGuesses: 2, defaultSchedule: [8, 8], defaultAutograde: true, defaultThreshold: "auto", defaultKind: "single", defaultPointsPer: 2, defaultOrderX: false, defaultOrderY: false };
 			// Question kinds. `single` is one response judged against an answer key —
 			// everything the app did before this existed. `list` is several elements
 			// judged against a grid, scoring a fixed number of points per element.
@@ -421,6 +459,7 @@
 				q.guesses = Math.min(MAX_GUESSES, Math.max(1, Number(q.guesses ?? settings.defaultGuesses) || 1));
 				q.points = resize(q.points ?? settings.defaultSchedule, q.guesses);
 				q.autograde = q.autograde ?? settings.defaultAutograde; // an explicit false (birthday mode) still wins
+				q.showPoints = q.showPoints !== false;
 				q.threshold = q.threshold ?? settings.defaultThreshold;
 				if (q.kind === "list") {
 					q.pointsPer = q.pointsPer ?? settings.defaultPointsPer;
@@ -468,6 +507,13 @@
 			// authorId: null = unset (fall back to the name match), "none" = the host said nobody, else a personId.
 			const isAuthor = (q, pid) => bday() && (q.authorId ? q.authorId !== "none" && q.authorId === pid : !!q.author && normName(name(pid)) === normName(q.author));
 			const guessedAuthor = (q) => players.find((p) => q.author && normName(name(p.personId)) === normName(q.author))?.personId ?? null;
+			// Who is grading the question on the table (Birthday Mode): they wear the star,
+			// and if they held a hat it is on a teammate for the duration.
+			const evaluatorPid = () => {
+				const q = curQ();
+				if (!q || !bday() || game.phase === "lobby") return null;
+				return q.authorId ? (q.authorId === "none" ? null : q.authorId) : guessedAuthor(q);
+			};
 			const eligible = (q) => units().filter((u) => !isAuthor(q, u.id));
 			// What a question is called in the UI: its author in birthday mode, its number otherwise.
 			const qLabel = (q, i) => (bday() && q.author ? q.author : String(i + 1));
@@ -496,7 +542,7 @@
 			const unassigned = () => players.filter((p) => !teamOf(p.personId));
 			const shuffle = (a) => a.map((v) => [Math.random(), v]).sort((x, y) => x[0] - y[0]).map((x) => x[1]);
 			function makeTeam(nm, pid) {
-				const t = { id: "t" + ++teamSeq, name: nm, members: [], captain: null, votes: new Set(), mutiny: false, mutinies: 0, crew: [] };
+				const t = { id: "t" + ++teamSeq, name: nm, members: [], captain: null, votes: new Set(), mutiny: false, mutinies: 0, crew: [], standIn: null };
 				teams.push(t);
 				if (pid) joinTeam(t.id, pid);
 				return t;
@@ -623,18 +669,20 @@
 			// Same headgear rule as the phones: plain hat = captain, vote against them
 			// or not; black tricorn = captain by mutiny; red bandana = voted. A player
 			// who did not vote wears nothing whichever way the vote went.
-			const ICON_W = { "hat-pirate": 25 };
+			const ICON_W = { "hat-pirate": 25, star: 25 };
 			const ICON = (kind, title) => {
 				const base = kind.replace(/-(red|green)$/, "");
 				return `<img class="hat ${base}" src="../assets/ega/hat/${kind}-${ICON_W[base] ?? 24}.png" alt="${title}" title="${title}" />`;
 			};
 			const HAT = ICON("hat-navy", "captain");
+			const STAR = ICON("star", "grading this question");
 			// Mutinies alternate colour: first red, second green, third red again.
 			const crewColour = (n) => (n % 2 === 1 ? "red" : "green");
 			const ORDINAL = ["", "first", "second", "third", "fourth", "fifth", "sixth", "seventh", "eighth"];
 			const nth = (n) => ORDINAL[n] ?? `${n}th`;
 			function headgear(t, pid) {
 				if (!t) return "";
+				if (pid === evaluatorPid()) return STAR;
 				const done = t.mutinies || 0;
 				if (pid === t.captain) return done ? ICON(`hat-pirate-${crewColour(done)}`, `captain by the ${nth(done)} mutiny`) : HAT;
 				if (t.votes.has(pid)) return ICON(`bandana-${crewColour(done + 1)}`, "voted to replace the captain");
@@ -650,7 +698,25 @@
 			// mints one. With neither, this page is not yours: go back to the door.
 			const HOST_PASSPHRASE = "imwithstupid";
 			const TOKEN_KEY = "hostToken";
+			const KEY_KEY = "hostKey"; // live: the passphrase itself, remembered on this laptop
+			let hostKey = null;
+			let live = null;
 			(function gate() {
+				if (!MOCK) {
+					// The room checks the passphrase, not this page. Present it in the URL
+					// once (the battery-death path) and it is remembered; without one, go
+					// back to the door. A refused socket clears it and sends you back too.
+					try {
+						const code = PARAMS.get("code");
+						if (code) {
+							localStorage.setItem(KEY_KEY, code);
+							history.replaceState(null, "", location.pathname); // keep it out of the address bar
+						}
+						hostKey = localStorage.getItem(KEY_KEY);
+					} catch {}
+					if (!hostKey) location.replace("index.html");
+					return;
+				}
 				let token = null;
 				try {
 					token = localStorage.getItem(TOKEN_KEY);
@@ -779,7 +845,11 @@
 				return Number(q.threshold);
 			}
 			// The elements a player submitted, in the order they wrote them.
-			const itemsOf = (r) => String(r.payload.text).split(",").map((t) => t.trim()).filter(Boolean);
+			// The filled elements of a list answer, in order: the live server sends the
+			// boxes as an array (blanks included), the mock stored comma text. Blanks
+			// are dropped, exactly as the server's itemsOf does, so a mark's index here
+			// is the same index the server toggles.
+			const itemsOf = (r) => (Array.isArray(r.payload.items) ? r.payload.items.map((t) => String(t ?? "").trim()) : String(r.payload.text ?? "").split(",").map((t) => t.trim())).filter(Boolean);
 
 			// Which submitted elements landed, as one boolean per element. Normalised
 			// exact comparison only — the fuzzy matcher is the server's job (see
@@ -944,6 +1014,7 @@
 			// question is still open it is also the resubmission grant — the player
 			// gets their textbox back. Once closed, only the un-confirm applies.
 			function sendBack(qid, uid) {
+				if (!MOCK) return live.send({ t: "verdict.sendBack", questionId: qid, unitId: uid });
 				const r = liveRows(qid).get(uid); // the latest guess is the one that gets replaced
 				if (!r) return;
 				if (qid === curQ()?.id && game.phase === "collecting") grants.add(uid);
@@ -954,6 +1025,7 @@
 			// A list's judgment is per element: click one to say it counts. The count,
 			// and so the points, follow from which elements are green.
 			function toggleMark(rowId, i) {
+				if (!MOCK) return live.send({ t: "verdict.mark", rowId, index: i });
 				const r = rowById(rowId);
 				if (!r) return;
 				const q = pack.questions.find((x) => x.id === r.questionId);
@@ -982,7 +1054,38 @@
 				for (let i = 0; i < items.length; i += cols) groups.push(`<span class="elrow">[${items.slice(i, i + cols).map((t, j) => chip(t, i + j)).join(", ")}]</span>`);
 				return groups.join(", ");
 			}
+			// The review queue marks a list on its own grid: one box per element, laid
+			// out the way the phone showed it, and a click on a box counts it. Sized for
+			// the largest list the settings allow (8 rows × 4 columns); a wider grid
+			// scrolls inside its own frame instead of pushing the page sideways.
+			function listGrid(q, r) {
+				// every box the phone showed, in place; blanks keep their spot on the grid
+				const boxes = Array.isArray(r.payload.items) ? r.payload.items.map((t) => String(t ?? "").trim()) : itemsOf(r);
+				if (!boxes.some(Boolean)) return `<span class="muted">—</span>`;
+				const marks = r.verdict.marks ?? [];
+				const cols = Math.max(1, gridDims(q).cols);
+				const rows = Math.ceil(boxes.length / cols);
+				const hide = hideGuesses();
+				let k = -1; // index among the filled boxes: what the server's marks count
+				let html = "";
+				for (let y = 0; y < rows; y++) {
+					html += "<tr>";
+					for (let x = 0; x < cols; x++) {
+						const i = y * cols + x;
+						const t = boxes[i];
+						if (i >= boxes.length) html += "<td></td>";
+						else if (!t) html += `<td><span class="el blank" title="left empty">—</span></td>`;
+						else {
+							k++;
+							html += `<td><span class="el${marks[k] ? " on" : ""}${hide ? " masked" : ""}" data-mark="${r.id}:${k}" role="button" tabindex="0" aria-pressed="${!!marks[k]}" title="${hide ? "hidden while you hold the laptop" : `click to ${marks[k] ? "un-mark" : "mark"} this one`}">${hide ? DOTS : esc(t)}</span></td>`;
+						}
+					}
+					html += "</tr>";
+				}
+				return `<div class="markwrap"><table class="markgrid">${html}</table></div>`;
+			}
 			function confirmRow(rowId) {
+				if (!MOCK) return live.send({ t: "verdict.confirm", rowId });
 				const r = rowById(rowId);
 				if (!r) return;
 				const v = r.verdict;
@@ -995,6 +1098,7 @@
 			// any time. Confirming what the grader already said is not an override;
 			// changing the judgment (or the matched candidate) is.
 			function setVerdict(rowId, state, matched) {
+				if (!MOCK) return live.send({ t: "verdict.set", rowId, state, matched });
 				const r = rowById(rowId); // verdicts are per guess, so the target is a row
 				if (!r) return;
 				const v = r.verdict;
@@ -1009,6 +1113,7 @@
 
 			function next() {
 				if (game.phase === "collecting" || game.phase === "ended") return;
+				if (!MOCK) return live.send({ t: game.phase === "lobby" ? "game.start" : "question.next" });
 				if (game.cur + 1 >= pack.questions.length) return toast("No more questions — End game when ready");
 				// Teams are dealt by the host from session settings, never implicitly here:
 				// a hand-adjusted arrangement must survive Start. Anyone still unassigned
@@ -1031,18 +1136,40 @@
 				game.phase = "collecting";
 				grants.clear();
 				game.evalQ = curQ().id;
+				if (teamsOn()) standAside();
 				render();
+			}
+			// Birthday Mode: the author grades their own question, so their team plays it
+			// without them. A hat they hold is lent to a teammate for that question and
+			// goes back to them at the next, whatever the crew did with it meanwhile.
+			function standAside() {
+				for (const t of teams) {
+					if (!t.standIn) continue;
+					if (t.members.includes(t.standIn.back)) t.captain = t.standIn.back;
+					t.standIn = null;
+				}
+				const ev = evaluatorPid();
+				const t = ev ? teamOf(ev) : null;
+				if (!t || t.captain !== ev || t.members.length < 2) return;
+				const pool = t.members.filter((m) => m !== ev);
+				const live = pool.filter(connected);
+				const c = live.length ? live : pool;
+				const stand = c[Math.floor(Math.random() * c.length)];
+				t.captain = stand;
+				t.standIn = { captain: stand, back: ev };
 			}
 			// Close = stop collecting. Non-submitters score 0 by absence (no row needed).
 			// Design call: v4's phase machine is collecting → revealing with no
 			// grading phase, so close and reveal are the same transition here.
 			function closeQ() {
 				if (game.phase !== "collecting") return;
+				if (!MOCK) return live.send({ t: "question.close" });
 				game.phase = "revealing";
 				grants.clear();
 				render();
 			}
 			function endGame() {
+				if (!MOCK) return live.send({ t: "game.end" });
 				if (game.phase === "ended") {
 					game.phase = game.before; // undo the mis-click; the room was frozen, not deleted
 				} else {
@@ -1054,6 +1181,7 @@
 			}
 
 			function addToLobby(pid) {
+				if (!MOCK) return live.send({ t: "players.add", personId: pid });
 				if (players.some((p) => p.personId === pid)) return;
 				players.push({ personId: pid, connected: true, joinedAtQuestion: game.cur >= 0 ? game.cur : null });
 			}
@@ -1112,7 +1240,7 @@
 					hn.textContent = "Close the question first";
 					hn.disabled = true;
 				} else if (nxtQ) {
-					hn.textContent = `Done — hand to ${nxtQ.author || "question " + (game.cur + 2)} ›${ungraded ? ` (${ungraded} still ungraded)` : ""}`;
+					hn.textContent = `Done — hand to the next grader ›${ungraded ? ` (${ungraded} still ungraded)` : ""}`;
 					hn.disabled = false;
 				} else {
 					hn.textContent = `Done — that was the last one${ungraded ? ` (${ungraded} still ungraded)` : ""}`;
@@ -1123,9 +1251,10 @@
 				// Hand-off lives in the strip too: in birthday mode it is the main verb,
 				// and it needs to be reachable from whichever tab the host is looking at.
 				const ht = $("#handoffTop");
-				const canHand = bday() && q && !game.handoff && !!q.author;
+				// Birthday Mode's main verb, whether or not the deck named an author
+				const canHand = bday() && q && game.phase !== "lobby" && !game.handoff;
 				ht.style.display = canHand ? "" : "none";
-				if (canHand) ht.textContent = `Hand to ${q.author} ›`;
+				if (canHand) ht.textContent = "Hand to grader ›";
 			}
 
 			function renderTracker() {
@@ -1174,7 +1303,7 @@
 				const tr = document.createElement("tr");
 				tr.className = "current";
 				const { rows, cols } = gridDims(q);
-				const kindPicker = `<label class="nb">Type <select data-k="kind">${Object.entries(KINDS).map(([k, label]) => `<option value="${k}" ${q.kind === k ? "selected" : ""}>${label}</option>`).join("")}</select></label>`;
+				const kindPicker = `<label>Type <select data-k="kind">${Object.entries(KINDS).map(([k, label]) => `<option value="${k}" ${q.kind === k ? "selected" : ""}>${label}</option>`).join("")}</select></label>`;
 
 				// --- single-answer fields ---
 				const singleFields = isList(q) ? "" : `
@@ -1183,10 +1312,15 @@
 
 				// --- list-answer fields: points per element, the two order axes, the grid ---
 				const listFields = !isList(q) ? "" : `
-					<label>Points per element <input type="number" data-k="pointsPer" value="${q.pointsPer ?? 0}" min="0" /> <span class="muted">× ${gridFilled(q)} filled = ${listMax(q)} max</span></label>
+					<label>Points per element <input type="number" data-k="pointsPer" value="${q.pointsPer ?? 0}" min="0" /> <span class="muted">${bday() ? `× ${rows * cols} boxes = ${(q.pointsPer ?? 0) * rows * cols} max` : `× ${gridFilled(q)} filled = ${listMax(q)} max`}</span></label>
 					<span class="orderpair">Order matters:
 						<label><input type="checkbox" data-k="orderX" ${q.orderX ? "checked" : ""} ${cols > 1 ? "" : "disabled"} /> across →${cols > 1 ? "" : ` <span class="muted">(one column)</span>`}</label>
 						<label><input type="checkbox" data-k="orderY" ${q.orderY ? "checked" : ""} ${rows > 1 ? "" : "disabled"} /> down ↓${rows > 1 ? "" : ` <span class="muted">(one row)</span>`}</label>
+					</span>
+					<span class="orderpair bday-only">Grid
+						<label>rows <input type="number" data-shape="rows" min="1" max="8" value="${rows}" class="short" /></label>
+						<label>columns <input type="number" data-shape="cols" min="1" max="4" value="${cols}" class="short" /></label>
+						<span class="muted">the boxes each phone shows; the author marks them</span>
 					</span>
 					<div class="gridwrap nb">
 						<div class="muted">Answer grid — one cell per element; commas inside a cell are alternative wordings of that same element</div>
@@ -1210,6 +1344,7 @@
 					</select> <span class="muted">per player; the host can still send one back on top</span></label>
 					<label>Deck slide <input type="number" data-k="slide" value="${q.slide}" min="1" /></label>
 					<label class="nb"><input type="checkbox" data-k="autograde" ${q.autograde ? "checked" : ""} /> Autograde <span class="muted">(off = everything queues for you)</span></label>
+					<label class="nb"><input type="checkbox" data-k="showPoints" ${q.showPoints !== false ? "checked" : ""} /> Points shown on phones <span class="muted">(off = the phone doesn't say what it's worth)</span></label>
 					<label class="nb">Fuzzy threshold <select data-k="threshold">
 						<option value="auto">auto — floor(len/3)</option>
 						<option value="exact">exact only</option>
@@ -1228,7 +1363,7 @@
 						const sc = schedule(q);
 						sc[Number(el.dataset.pg)] = Math.max(0, Number(el.value) || 0);
 						q.points = sc;
-						render();
+						commitQ(q);
 					}),
 				);
 
@@ -1237,15 +1372,28 @@
 					el.addEventListener("change", () => {
 						const [r, c] = el.dataset.cell.split(",").map(Number);
 						q.grid[r][c] = el.value.split(",").map((t) => t.trim()).filter(Boolean);
-						render();
+						commitQ(q);
+					}),
+				);
+				// Birthday Mode: only the shape of the grid matters (the author marks the boxes)
+				tr.querySelectorAll("[data-shape]").forEach((el) =>
+					el.addEventListener("change", () => {
+						const cap = el.dataset.shape === "rows" ? 8 : 4;
+						const want = Math.max(1, Math.min(cap, Number(el.value) || 1));
+						const cur = gridRows(q);
+						const { rows: r0, cols: c0 } = gridDims(q);
+						const nr = el.dataset.shape === "rows" ? want : r0;
+						const nc = el.dataset.shape === "cols" ? want : c0;
+						q.grid = Array.from({ length: nr }, (_, r) => Array.from({ length: nc }, (_, c) => cur[r]?.[c] ?? []));
+						commitQ(q);
 					}),
 				);
 				const addRow = tr.querySelector("[data-addrow]");
-				if (addRow) addRow.onclick = () => { q.grid.push(gridRows(q)[0].map(() => [])); render(); };
+				if (addRow) addRow.onclick = () => { q.grid.push(gridRows(q)[0].map(() => [])); commitQ(q); };
 				const addCol = tr.querySelector("[data-addcol]");
-				if (addCol) addCol.onclick = () => { q.grid.forEach((row) => row.push([])); render(); };
-				tr.querySelectorAll("[data-delrow]").forEach((b) => (b.onclick = () => { if (gridDims(q).rows > 1) { q.grid.splice(Number(b.dataset.delrow), 1); render(); } }));
-				tr.querySelectorAll("[data-delcol]").forEach((b) => (b.onclick = () => { if (gridDims(q).cols > 1) { q.grid.forEach((row) => row.splice(Number(b.dataset.delcol), 1)); render(); } }));
+				if (addCol) addCol.onclick = () => { q.grid.forEach((row) => row.push([])); commitQ(q); };
+				tr.querySelectorAll("[data-delrow]").forEach((b) => (b.onclick = () => { if (gridDims(q).rows > 1) { q.grid.splice(Number(b.dataset.delrow), 1); commitQ(q); } }));
+				tr.querySelectorAll("[data-delcol]").forEach((b) => (b.onclick = () => { if (gridDims(q).cols > 1) { q.grid.forEach((row) => row.splice(Number(b.dataset.delcol), 1)); commitQ(q); } }));
 
 				tr.querySelectorAll("[data-k]").forEach((el) =>
 					el.addEventListener("change", () => {
@@ -1256,16 +1404,16 @@
 							q.guesses = Number(el.value) || 1;
 							q.points = resize(q.points, q.guesses); // the schedule follows the guess count
 						} else if (k === "slide" || k === "pointsPer") q[k] = Math.max(0, Number(el.value) || 0);
-						else if (k === "autograde" || k === "orderX" || k === "orderY") q[k] = el.checked;
+						else if (k === "autograde" || k === "orderX" || k === "orderY" || k === "showPoints") q[k] = el.checked;
 						else q[k] = el.value;
-						render();
+						commitQ(q);
 					}),
 				);
 				tr.querySelector("[data-remove]").onclick = () => {
 					if (i <= game.cur) return toast("Can't remove a question that's already been asked");
 					pack.questions.splice(i, 1);
 					openSettings = null;
-					render();
+					commitPack();
 				};
 				return tr;
 			}
@@ -1291,16 +1439,16 @@
 						: "previous question";
 				if (hideGuesses()) $("#evalMeta").textContent += " · answers covered while you hold the laptop";
 				$("#evalPrompt").innerHTML = bday()
-					? `${esc(q.author || "This")}'s question<span class="answerline">${ptsLabel(q)} pts</span>`
+					? `Question ${pack.questions.indexOf(q) + 1}<span class="answerline">${ptsLabel(q)} pts</span>`
 					: isList(q)
 						? `${esc(q.prompt)}<span class="answerline">list of ${gridFilled(q)} · ${ptsLabel(q)} pts</span>`
 						: `${esc(q.prompt)}<span class="answerline">${q.answers.map(esc).join(", ")} · ${ptsLabel(q)} pts</span>`;
 				// hand-off button: only in birthday mode, only for the live question, only while the host holds the laptop
 				const hb = $("#handoffBtn");
-				hb.style.display = bday() && isCur && !game.handoff && q.author ? "" : "none";
-				hb.textContent = `Hand to ${q.author} ›`;
+				hb.style.display = bday() && isCur && !game.handoff ? "" : "none";
+				hb.textContent = "Hand to grader ›";
 				hb.onclick = enterHandoff;
-				$("#handoffWho").textContent = q.author || "";
+				$("#handoffWho").textContent = "The grader";
 				const fig = (n, label) => {
 					const t = thumbFor(n);
 					return t ? `<figure><img src="${t.src}" class="${t.standin ? "standin" : ""}" /><figcaption>slide ${n}</figcaption></figure>` : "";
@@ -1341,13 +1489,13 @@
 						v.state === null
 							? ""
 							: isList(q)
-								? `autograde marked <b>${v.count} of ${v.outOf}</b> — click an element to change it`
+								? `autograde marked <b>${v.count} of ${v.outOf}</b> — click a box to change it`
 								: (v.method === "manual" ? "autograde off" : `distance ${v.distance >= 6 ? "6+" : v.distance} · ${v.method}`) + ` grader says <span class="v-${v.state === "correct" ? "ok" : "no"}">${v.state}</span>`;
 					const dotCls = v.state === "correct" ? "ok" : v.state === "incorrect" ? "no" : "";
 					const headline = isList(q)
-						? listChips(q, r, true)
+						? listGrid(q, r)
 						: hideGuesses()
-							? `<span class="masked">hidden — hand the laptop over to read it</span>`
+							? `<span class="masked">hidden — hand the laptop to the grader</span>`
 							: esc(r.payload.text);
 					d.innerHTML = `<div class="guess">${headline}</div>
 						<div class="muted"><span class="dot ${dotCls} outline"></span><b>${esc(unitName(r.unitId))}</b>${teamsOn() ? ` <span class="muted">(${esc(name(r.personId))})</span>` : ""} · guess ${r.guessNo} of ${allowedGuesses(q)}${why ? ` · ${why}` : ""}</div>
@@ -1380,6 +1528,7 @@
 							toggleMark(rid, i);
 						}),
 					);
+					d.querySelectorAll("[data-mark]").forEach((el) => (el.onkeydown = (e) => (e.key === "Enter" || e.key === " ") && (e.preventDefault(), el.click())));
 					queue.appendChild(d);
 				}
 
@@ -1397,7 +1546,7 @@
 					const tr = document.createElement("tr");
 					if (!p.connected) tr.className = "off";
 					if (isAuthor(q, p.personId)) {
-						tr.innerHTML = `<td>${esc(u.label)}</td><td colspan="${N + 1}"><span class="muted">—</span></td><td><span class="dot"></span><span class="muted">author — grading this one, sits it out</span></td><td></td>`;
+						tr.innerHTML = `<td>${esc(u.label)}</td><td colspan="${N + 1}"><span class="muted">—</span></td><td><span class="dot"></span><span class="muted">grader — marking this one, sits it out</span></td><td></td>`;
 						tb.appendChild(tr);
 						continue;
 					}
@@ -1473,6 +1622,7 @@
 				});
 				tb.querySelectorAll("[data-author]").forEach((el) =>
 					el.addEventListener("change", () => {
+						if (!MOCK) return live.send({ t: "author.set", questionId: el.dataset.author, personId: el.value || "none" });
 						const q = pack.questions.find((x) => x.id === el.dataset.author);
 						q.authorId = el.value || "none"; // an explicit choice, either way
 						render();
@@ -1512,18 +1662,34 @@
 					tr.innerHTML = `<td></td><td><span class="muted">unassigned</span></td><td></td><td>${unassigned().map((p) => `<div class="teammember"><span class="hatgap"></span> ${esc(name(p.personId))} ${teamOpts(p.personId)}</div>`).join("")}</td><td class="scorecol" ${settings.showScores ? "" : 'style="display:none"'}></td><td></td>`;
 					tb.appendChild(tr);
 				}
-				tb.querySelectorAll("[data-recap]").forEach((b) => (b.onclick = () => (stepDown(b.dataset.recap), render())));
-				tb.querySelectorAll("[data-disband]").forEach((b) => (b.onclick = () => (removeTeam(b.dataset.disband), render())));
-				tb.querySelectorAll("[data-clearvotes]").forEach((b) => (b.onclick = () => (teamById(b.dataset.clearvotes).votes.clear(), render())));
+				tb.querySelectorAll("[data-recap]").forEach(
+					(b) =>
+						(b.onclick = () => {
+							if (!MOCK) {
+								// a random new captain, picked here the way the room would: someone else, online if possible
+								const t = teamById(b.dataset.recap);
+								const others = t.members.filter((pid) => pid !== t.captain);
+								const pool = others.filter(connected).length ? others.filter(connected) : others;
+								if (!pool.length) return toast("Nobody to hand it to");
+								return live.send({ t: "team.setCaptain", teamId: t.id, personId: pool[Math.floor(Math.random() * pool.length)] });
+							}
+							stepDown(b.dataset.recap);
+							render();
+						}),
+				);
+				tb.querySelectorAll("[data-disband]").forEach((b) => (b.onclick = () => (MOCK ? (removeTeam(b.dataset.disband), render()) : live.send({ t: "team.disband", teamId: b.dataset.disband }))));
+				tb.querySelectorAll("[data-clearvotes]").forEach((b) => (b.onclick = () => (MOCK ? (teamById(b.dataset.clearvotes).votes.clear(), render()) : live.send({ t: "team.clearVotes", teamId: b.dataset.clearvotes }))));
 				tb.querySelectorAll("[data-rename]").forEach((el) =>
 					el.addEventListener("change", () => {
 						const nm = el.value.trim();
+						if (!MOCK) return nm && live.send({ t: "team.rename", teamId: el.dataset.rename, name: nm });
 						if (nm) teamById(el.dataset.rename).name = nm;
 						render();
 					}),
 				);
 				tb.querySelectorAll("[data-cap]").forEach((el) =>
 					el.addEventListener("change", () => {
+						if (!MOCK) return live.send({ t: "team.setCaptain", teamId: el.dataset.cap, personId: el.value });
 						const t = teamById(el.dataset.cap);
 						t.captain = el.value;
 						t.votes.clear();
@@ -1533,7 +1699,7 @@
 						render();
 					}),
 				);
-				tb.querySelectorAll("[data-move]").forEach((el) => el.addEventListener("change", () => (movePlayer(el.dataset.move, el.value || null), render())));
+				tb.querySelectorAll("[data-move]").forEach((el) => el.addEventListener("change", () => (MOCK ? (movePlayer(el.dataset.move, el.value || null), render()) : live.send({ t: "team.move", personId: el.dataset.move, teamId: el.value || null }))));
 			}
 
 			function renderPlayers() {
@@ -1585,14 +1751,16 @@
 				}
 				pb.querySelectorAll("[data-tags]").forEach((el) =>
 					el.addEventListener("change", () => {
-						person(el.dataset.tags).tags = el.value.split(",").map((s) => s.trim()).filter(Boolean);
+						const tags = el.value.split(",").map((s) => s.trim()).filter(Boolean);
+						if (!MOCK) return live.send({ t: "people.tag", personId: el.dataset.tags, tags });
+						person(el.dataset.tags).tags = tags;
 						renderPlayers();
 					}),
 				);
-				pb.querySelectorAll("[data-add]").forEach((b) => (b.onclick = () => (addToLobby(b.dataset.add), render())));
+				pb.querySelectorAll("[data-add]").forEach((b) => (b.onclick = () => (addToLobby(b.dataset.add), MOCK && render())));
 				$("#seedBtn").onclick = () => {
 					shown.forEach((p) => addToLobby(p.personId));
-					render();
+					if (MOCK) render();
 				};
 			}
 
@@ -1625,6 +1793,7 @@
 				$("#teamMode").disabled = game.phase !== "lobby"; // the log is keyed by team once play starts
 				$("#teamMax").value = settings.teamMax;
 				$("#rotateEachRound").checked = settings.rotateEachRound;
+				$("#mutiny").checked = settings.mutiny !== false;
 				$("#defaultGuesses").value = String(settings.defaultGuesses);
 				$("#defaultAutograde").checked = settings.defaultAutograde;
 				$("#defaultThreshold").value = settings.defaultThreshold;
@@ -1636,12 +1805,14 @@
 				box.innerHTML = pointBoxes(resize(settings.defaultSchedule, MAX_GUESSES), settings.defaultGuesses, "dg");
 				box.querySelectorAll("[data-dg]").forEach((el) =>
 					el.addEventListener("change", () => {
+						settings.defaultSchedule = resize(settings.defaultSchedule, MAX_GUESSES);
 						settings.defaultSchedule[Number(el.dataset.dg)] = Math.max(0, Number(el.value) || 0);
-						render();
+						commitSettings();
 					}),
 				);
-				// Real deployment: https://<worker>.workers.dev/?view=leaderboard. The mock opens a sibling page.
-				$("#boardUrl").textContent = new URL("leaderboard.html", location.href).href.replace(/^file:\/\//, "");
+				// Live, the short routes; the mock opens its sibling pages.
+				$("#boardUrl").textContent = MOCK ? new URL("leaderboard.html", location.href).href.replace(/^file:\/\//, "") : location.host + "/board";
+				$("#joinUrl").textContent = MOCK ? new URL("index.html?tv=1", location.href).href.replace(/^file:\/\//, "") : location.host + "/join";
 			}
 
 			// Hand-off: pass the laptop to the author. Hides the strip, the tabs and
@@ -1674,6 +1845,7 @@
 			// its own socket client; in the mock, localStorage + the storage event
 			// stands in for the server push.
 			function publishStandings() {
+				if (!MOCK) return; // the board has its own socket
 				localStorage.setItem(
 					"mockStandings",
 					JSON.stringify({ standings: standings(), teams: teamsOn(), showScores: settings.showScores, phase: game.phase, q: game.cur + 1, total: pack.questions.length, at: Date.now() }),
@@ -1688,60 +1860,149 @@
 			// a push to every player.
 			const FONT_KEY = "mockEgaFont";
 			const SAY_KEY = "mockHostSay";
+			// How the line lands: milliseconds per word, whether he is on screen only
+			// while speaking, and the beats either side of the speech.
+			const REILLY_KEY = "mockReilly";
+			const reilly = { wordMs: 160, appearOnly: false, leadIn: 2, hold: 5 };
 			const store = (k, v) => {
 				try {
 					localStorage.setItem(k, v);
 				} catch {}
 			};
+			let liveSay = "";
 			function paintSay() {
-				let cur = "";
-				try {
-					cur = localStorage.getItem(SAY_KEY) || "";
-				} catch {}
+				let cur = liveSay;
+				if (MOCK)
+					try {
+						const raw = localStorage.getItem(SAY_KEY) || "";
+						cur = raw.startsWith("{") ? JSON.parse(raw).text || "" : raw;
+					} catch {}
 				$("#sayNote").textContent = cur ? `On every phone now: “${cur}”` : "Nothing on the phones.";
 				$("#sayClear").disabled = !cur;
 			}
-			try {
-				$("#egaFont").value = localStorage.getItem(FONT_KEY) === "mono" ? "mono" : "scumm";
-			} catch {}
-			$("#egaFont").onchange = (e) => store(FONT_KEY, e.target.value);
+			const STRICT_KEY = "mockEgaStrict"; // the device wall's flag, so the mock's phones follow this box too
+			if (MOCK)
+				try {
+					$("#egaFont").value = localStorage.getItem(FONT_KEY) === "mono" ? "mono" : "scumm";
+					$("#egaStrict").checked = localStorage.getItem(STRICT_KEY) === "1";
+					Object.assign(reilly, JSON.parse(localStorage.getItem(REILLY_KEY) || "{}"));
+				} catch {}
+			function paintReilly() {
+				$("#wordMs").value = reilly.wordMs;
+				$("#appearOnly").checked = reilly.appearOnly;
+				$("#leadIn").value = reilly.leadIn;
+				$("#holdFor").value = reilly.hold;
+				const wpm = Math.round(60000 / reilly.wordMs);
+				$("#wordMsNote").textContent = `${reilly.wordMs} ms a word · about ${wpm} words a minute`;
+				// the two beats only exist when he comes and goes
+				$("#timingRow").style.opacity = reilly.appearOnly ? "" : "0.45";
+				$("#timingRow").title = reilly.appearOnly ? "" : "only used when he is on screen just to speak";
+			}
+			function saveReilly() {
+				if (!MOCK) return live.send({ t: "settings.set", patch: { reilly: { ...reilly } } });
+				store(REILLY_KEY, JSON.stringify(reilly));
+				paintReilly();
+			}
+			$("#wordMs").oninput = () => ((reilly.wordMs = Number($("#wordMs").value)), saveReilly());
+			$("#appearOnly").onchange = () => ((reilly.appearOnly = $("#appearOnly").checked), saveReilly());
+			$("#leadIn").onchange = () => ((reilly.leadIn = Math.max(0, Number($("#leadIn").value) || 0)), saveReilly());
+			$("#holdFor").onchange = () => ((reilly.hold = Math.max(0, Number($("#holdFor").value) || 0)), saveReilly());
+
+			// The preview runs the same three beats the phones do, so what you set is
+			// what you see before you send it to twenty people.
+			let previewTimers = [];
+			function preview() {
+				previewTimers.forEach(clearTimeout);
+				previewTimers = [];
+				const line = $("#hostSay").value.trim() || "Look behind you, a three-headed monkey!";
+				const words = line.split(/\s+/);
+				const stage = $("#sayStage");
+				const out = $("#sayStageLine");
+				const phase = $("#sayStagePhase");
+				const at = (ms, fn) => previewTimers.push(setTimeout(fn, ms));
+				out.textContent = "";
+				stage.classList.toggle("empty", reilly.appearOnly);
+				phase.textContent = reilly.appearOnly ? `appears, waits ${reilly.leadIn}s…` : "waiting…";
+				const lead = reilly.appearOnly ? reilly.leadIn * 1000 : 0;
+				at(lead, () => (stage.classList.remove("empty"), (phase.textContent = "speaking…")));
+				words.forEach((w, i) => at(lead + i * reilly.wordMs, () => (out.textContent += (i ? " " : "") + w)));
+				const done = lead + words.length * reilly.wordMs;
+                at(done, () => (phase.textContent = reilly.appearOnly ? `holds ${reilly.hold}s…` : "stays until you clear it"));
+				if (reilly.appearOnly)
+					at(done + reilly.hold * 1000, () => {
+						out.textContent = "";
+						stage.classList.add("empty");
+						phase.textContent = "gone";
+					});
+			}
+			$("#sayPreview").onclick = preview;
+			paintReilly();
+			$("#egaFont").onchange = (e) => (MOCK ? store(FONT_KEY, e.target.value) : live.send({ t: "settings.set", patch: { egaFont: e.target.value } }));
+			$("#egaStrict").onchange = (e) => (MOCK ? store(STRICT_KEY, e.target.checked ? "1" : "0") : live.send({ t: "settings.set", patch: { egaStrict: e.target.checked } }));
+			// the two TV pages: the mock's siblings stay in the playground
+			$("#openBoard").href = MOCK ? "leaderboard.html?mock" : "leaderboard.html";
+			$("#openJoin").href = MOCK ? "index.html?mock&tv=1" : "index.html?tv=1";
 			$("#saySend").onclick = () => {
-				store(SAY_KEY, $("#hostSay").value.trim());
+				if (!MOCK) return live.send({ t: "say", text: $("#hostSay").value.trim() }), preview();
+				// the value carries a stamp so re-sending the same words replays it
+				store(SAY_KEY, JSON.stringify({ text: $("#hostSay").value.trim(), at: Date.now() }));
 				paintSay();
+				preview();
 			};
 			$("#sayClear").onclick = () => {
-				store(SAY_KEY, "");
 				$("#hostSay").value = "";
+				if (!MOCK) return live.send({ t: "say", text: "" });
+				store(SAY_KEY, JSON.stringify({ text: "", at: Date.now() }));
 				paintSay();
 			};
 			$("#hostSay").addEventListener("keydown", (e) => e.key === "Enter" && $("#saySend").click());
 			window.addEventListener("storage", (e) => (e.key === SAY_KEY || e.key === FONT_KEY) && paintSay());
 			paintSay();
 
+			// A live room outlives the page, so "start over" has to be a real action.
+			// Two taps, the second within four seconds, so a stray click can't wipe a game.
+			let newGameArmed = null;
+			$("#newGameBtn").onclick = () => {
+				const b = $("#newGameBtn");
+				if (newGameArmed) {
+					clearTimeout(newGameArmed);
+					newGameArmed = null;
+					b.textContent = "New game";
+					if (MOCK) return location.reload();
+					return live.send({ t: "game.reset" });
+				}
+				b.textContent = "Tap again to start over";
+				newGameArmed = setTimeout(() => ((newGameArmed = null), (b.textContent = "New game")), 4000);
+			};
 			$("#signOut").onclick = () => {
 				try {
 					localStorage.removeItem(TOKEN_KEY);
+					localStorage.removeItem(KEY_KEY);
 				} catch {}
 			};
 			$("#handoffTop").onclick = enterHandoff;
 			$("#openBtn").onclick = () => {
+				if (!MOCK) return live.send({ t: game.open ? "room.close" : "room.open" });
 				game.open = !game.open;
 				toast(game.open ? "Room open — players can join" : "Room closed — joins rejected, players already in stay in");
 				render();
 			};
 			$("#dealBtn").onclick = () => {
+				if (!MOCK) return live.send({ t: "teams.deal" }), showTab("players");
 				assignRandom();
 				toast(`Dealt ${players.length} players into ${teams.length} teams · ${teams.map((t) => t.members.length).join(" + ")}`);
 				showTab("players");
 				render();
 			};
-			$("#rotateCaptains").onclick = () => (rotateCaptains(), render());
+			$("#rotateCaptains").onclick = () => (MOCK ? (rotateCaptains(), render()) : live.send({ t: "teams.rotate" }));
 			$("#addTeam").onclick = () => {
+				if (!MOCK) return live.send({ t: "team.create", name: `Team ${teams.length + 1}` });
 				const t = makeTeam(`Team ${teams.length + 1}`);
 				toast(`${t.name} added — move players in with the dropdowns`);
 				render();
 			};
 			$("#teamMode").onchange = (e) => {
+				if (!MOCK) return live.send({ t: "settings.set", patch: { teamMode: e.target.value } });
 				const was = settings.teamMode;
 				settings.teamMode = e.target.value;
 				// Changing the mode discards whatever the old one produced: picked teams
@@ -1750,27 +2011,27 @@
 				if (settings.teamMode === "pick") (mockPick(), toast("Mock: players picked their teams"));
 				render();
 			};
-			$("#teamMax").onchange = (e) => ((settings.teamMax = Math.max(2, Math.min(10, Number(e.target.value) || 4))), render());
-			$("#rotateEachRound").onchange = (e) => ((settings.rotateEachRound = e.target.checked), render());
+			$("#teamMax").onchange = (e) => ((settings.teamMax = Math.max(2, Math.min(10, Number(e.target.value) || 4))), commitSettings());
+			$("#rotateEachRound").onchange = (e) => ((settings.rotateEachRound = e.target.checked), commitSettings());
 			$("#nextBtn").onclick = next;
 			$("#closeBtn").onclick = closeQ;
 			$("#endBtn").onclick = endGame;
 			$("#endBtn2").onclick = endGame;
 			$("#evalQ").onchange = (e) => ((game.evalQ = e.target.value), render());
 			$("#tagFilter").onchange = renderPlayers;
-			$("#defaultKind").onchange = (e) => ((settings.defaultKind = e.target.value), render());
-			$("#defaultPointsPer").onchange = (e) => ((settings.defaultPointsPer = Math.max(0, Number(e.target.value) || 0)), render());
-			$("#defaultOrderX").onchange = (e) => ((settings.defaultOrderX = e.target.checked), render());
-			$("#defaultOrderY").onchange = (e) => ((settings.defaultOrderY = e.target.checked), render());
-			$("#defaultAutograde").onchange = (e) => ((settings.defaultAutograde = e.target.checked), render());
-			$("#defaultThreshold").onchange = (e) => ((settings.defaultThreshold = e.target.value), render());
+			$("#defaultKind").onchange = (e) => ((settings.defaultKind = e.target.value), commitSettings());
+			$("#defaultPointsPer").onchange = (e) => ((settings.defaultPointsPer = Math.max(0, Number(e.target.value) || 0)), commitSettings());
+			$("#defaultOrderX").onchange = (e) => ((settings.defaultOrderX = e.target.checked), commitSettings());
+			$("#defaultOrderY").onchange = (e) => ((settings.defaultOrderY = e.target.checked), commitSettings());
+			$("#defaultAutograde").onchange = (e) => ((settings.defaultAutograde = e.target.checked), commitSettings());
+			$("#defaultThreshold").onchange = (e) => ((settings.defaultThreshold = e.target.value), commitSettings());
 			$("#defaultGuesses").onchange = (e) => {
 				settings.defaultGuesses = Number(e.target.value);
 				settings.defaultSchedule = resize(settings.defaultSchedule, settings.defaultGuesses); // boxes follow the picker
-				render();
+				commitSettings();
 			};
-			for (const k of ["autoPassFuzzy", "showVerdictsLive", "showScores", "showPointsOnPhones", "sharedRank", "birthdayMode"]) {
-				$("#" + k).onchange = (e) => ((settings[k] = e.target.checked), render());
+			for (const k of ["mutiny", "autoPassFuzzy", "showVerdictsLive", "showScores", "showPointsOnPhones", "sharedRank", "birthdayMode"]) {
+				$("#" + k).onchange = (e) => ((settings[k] = e.target.checked), commitSettings());
 			}
 
 			// Pack in / out — the JSON is bidirectionally editable (hand-write or build here and export).
@@ -1802,7 +2063,7 @@
 					pack.questions.forEach(normalizeQ);
 					openSettings = null;
 					toast(`Loaded ${pack.questions.length} questions from ${f.name}`);
-					render();
+					commitPack();
 				} catch (err) {
 					toast("Couldn't load pack: " + err.message);
 				}
@@ -1815,6 +2076,7 @@
 				URL.revokeObjectURL(a.href);
 			};
 			$("#addQ").onclick = () => {
+				if (!MOCK) return live.send({ t: "question.add" });
 				const n = pack.questions.length + 1;
 				pack.questions.push(normalizeQ({ id: "q" + Date.now(), slide: n * 2, prompt: "New question", answers: ["answer"], flags: [] }));
 				openSettings = pack.questions.length - 1;
@@ -1965,7 +2227,7 @@
 						openSettings = null;
 						$("#deckNote").textContent = `${f.name}: Reilly Birthday Mode, ${bq.length} participants in the order on slide 1. Question and answer text was not read.`;
 						toast(`Birthday deck: ${bq.length} participants`);
-						render();
+						commitPack();
 						e.target.value = "";
 						return;
 					}
@@ -1985,7 +2247,7 @@
 					const flagged = qs.filter((q) => q.flags.length).length;
 					$("#deckNote").textContent = `${f.name}: ${slides.length} slides → ${qs.length} questions${flagged ? `, ${flagged} flagged ⚠` : ""}.`;
 					toast(`${qs.length} questions from ${slides.length} slides`);
-					render();
+					commitPack();
 					openMapper("");
 				} catch (err) {
 					toast("Couldn't read deck: " + err.message);
@@ -2113,7 +2375,7 @@
 				closeMapper();
 				$("#deckNote").textContent = `${deck.name}: ${deck.slides.length} slides → ${pack.questions.length} questions.`;
 				toast(`${pack.questions.length} questions mapped`);
-				render();
+				commitPack();
 			}
 			$("#mapBtn").onclick = () => openMapper("Set each slide's role, then apply.");
 			$("#mapApply").onclick = applyMap;
@@ -2216,6 +2478,104 @@
 					}
 				}),
 			);
+
+			// ---- live: the room's snapshot becomes this page's state ----------
+			// The mock's arrays are refilled in place (they are consts the render
+			// functions close over), so nothing above has to know about the socket.
+			// Edits that the mock applied locally now go to the room as frames and
+			// come back in the next snapshot: commitQ / commitSettings / commitPack.
+			function commitQ(q) {
+				if (MOCK) return render();
+				live.send({ t: "question.update", questionId: q.id, patch: q });
+			}
+			function commitSettings() {
+				if (MOCK) return render();
+				live.send({ t: "settings.set", patch: { ...settings, reilly: { ...reilly } } });
+			}
+			function commitPack() {
+				if (MOCK) return render();
+				live.send({ t: "questions.load", pack: { title: pack.title, mode: pack.mode ?? null, questions: pack.questions } });
+			}
+			function adoptHost(s) {
+				Object.assign(settings, s.settings);
+				Object.assign(reilly, s.settings.reilly ?? {});
+				$("#egaFont").value = s.settings.egaFont === "mono" ? "mono" : "scumm";
+				$("#egaStrict").checked = !!s.settings.egaStrict;
+				const wasCur = game.cur;
+				Object.assign(game, { phase: s.game.phase === "closed" ? "revealing" : s.game.phase, cur: s.game.cur, before: s.game.before, open: !!s.game.open });
+				pack.questions = s.questions;
+				pack.mode = settings.birthdayMode ? "birthday" : null;
+				people.splice(0, people.length, ...s.people);
+				players.splice(0, players.length, ...s.players);
+				log.splice(0, log.length, ...s.log);
+				grants.clear();
+				for (const g of s.grants) grants.add(g);
+				// the mock keeps votes as a Set; the wire carries an array
+				teams.splice(0, teams.length, ...s.teams.map((t) => ({ ...t, votes: new Set(t.votes) })));
+				if (game.cur !== wasCur || !game.evalQ) game.evalQ = curQ()?.id ?? game.evalQ;
+				if (openSettings != null && openSettings >= pack.questions.length) openSettings = null;
+				liveSay = s.say?.text ?? "";
+				paintSay();
+				paintReilly();
+				render();
+			}
+			// A snapshot lands every time anyone in the room does anything, and the
+			// redraw rebuilds most inputs (a prompt, a team name, tags, a grid cell)
+			// or repaints their values (the Reilly timings). Typing must survive
+			// that: the focused field's text, caret and focus are carried across
+			// the redraw to whichever element now stands where it stood.
+			const fieldKey = (el) => `${el.tagName}#${el.id}|${el.name}|${el.placeholder}|${JSON.stringify(el.dataset)}`;
+			function withTypingKept(fn) {
+				const a = document.activeElement;
+				const typing = !!a && (a.tagName === "TEXTAREA" || (a.tagName === "INPUT" && ["text", "number"].includes(a.type)));
+				if (!typing) return fn();
+				const key = fieldKey(a);
+				const { value, selectionStart, selectionEnd } = a;
+				fn();
+				const b = a.isConnected ? a : [...document.querySelectorAll(a.tagName)].find((el) => fieldKey(el) === key);
+				if (!b) return;
+				if (b.value !== value) b.value = value;
+				if (document.activeElement !== b) b.focus({ preventScroll: true });
+				try {
+					b.setSelectionRange(selectionStart, selectionEnd);
+				} catch {}
+			}
+			if (!MOCK) {
+				// the fake room's contents would show until the first snapshot; start empty instead
+				pack.questions = [];
+				people.length = 0;
+				players.length = 0;
+				log.length = 0;
+				teams.length = 0;
+				live = { send: () => toast("Still connecting…") };
+				const netEl = $("#netHost");
+				netEl.textContent = "connecting… ";
+				netEl.style.display = "";
+				// Ask the Worker whether the passphrase is right before opening the
+				// socket. A refused socket and a dead wifi look identical from here,
+				// and only a wrong passphrase should send the host back to the door.
+				fetch("/ws?role=host&key=" + encodeURIComponent(hostKey))
+					.then((r) => r.status)
+					.catch(() => 0)
+					.then((status) => {
+						if (status === 403) {
+							try {
+								localStorage.removeItem(KEY_KEY);
+							} catch {}
+							return location.replace("index.html");
+						}
+						live = TriviaLive.connect({
+							role: "host",
+							key: hostKey,
+							onSnapshot: (s) => withTypingKept(() => adoptHost(s)),
+							onError: (e) => toast(e.message),
+							onStatus: (status) => {
+								netEl.textContent = status === "live" ? "" : status === "failed" ? "can't reach the room, retrying… " : status + "… ";
+								netEl.style.display = status === "live" ? "none" : "";
+							},
+						});
+					});
+			}
 
 			let saved = null;
 			try {

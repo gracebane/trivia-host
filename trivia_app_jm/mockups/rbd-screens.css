@@ -1,0 +1,156 @@
+/* =====================================================================
+   Reilly Birthday Mode — the BIG SCREENS and the DOOR.
+
+   rbd.css dresses the phone (everything inside .screen). This file does the
+   same job for the three pages that are not a phone: the leaderboard on the
+   TV, the join screen on the TV, and the landing page a guest opens first.
+   They carry `board` or `door` on <body>, plus the same three switches the
+   phones use: `rbd` (the skin), `mono` (the DOS face), `strict` (the strict
+   EGA layer). rbd.css and rbd-strict.css already cover buttons, fields,
+   links and .muted on any page; what is added here is the page ground, the
+   title, the table and the QR frame.
+
+   Sizes stay on the 16-brick grid the strict layer insists on (16/32/64),
+   so the same rules hold with or without `strict`.
+   ===================================================================== */
+
+/* ---- the ground: the whole page, not a card on a grey desk ---- */
+body.rbd.board,
+body.rbd.door {
+	background: var(--ground);
+	color: var(--ink);
+	font-family: "SCUMM Subtitle", ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace;
+	font-size: 16px;
+	line-height: 20px;
+	-webkit-font-smoothing: none;
+	font-smooth: never;
+	image-rendering: pixelated;
+}
+body.rbd.mono.board,
+body.rbd.mono.door {
+	font-family: "Px437 IBM VGA8", "IBM Plex Mono", "DejaVu Sans Mono", ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace;
+}
+body.rbd.board .card,
+body.rbd.door .card {
+	background: transparent;
+}
+
+/* ---- the title: the credits face, yellow with a hard shadow ---- */
+body.rbd .brand {
+	font-family: "SCUMM Credits", "SCUMM Solid", ui-monospace, monospace;
+	font-weight: normal;
+	color: var(--accent-2);
+	text-transform: uppercase;
+	letter-spacing: 2px;
+	text-shadow: 4px 4px 0 var(--ega-black);
+	font-size: 64px;
+	line-height: 68px;
+	margin: 0 0 8px;
+}
+body.rbd.mono .brand {
+	font-family: "Px437 IBM VGA8", "IBM Plex Mono", "DejaVu Sans Mono", ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace;
+	font-weight: bold;
+	font-size: 48px;
+	line-height: 52px;
+}
+body.rbd.strict .brand {
+	color: var(--verb);
+	letter-spacing: 0;
+	text-shadow: 4px 4px 0 var(--panel);
+}
+body.rbd .sub,
+body.rbd .note {
+	color: var(--ink-dim);
+	font-size: 16px;
+	line-height: 20px;
+}
+
+/* ---- the leaderboard table, read from the sofa ---- */
+body.rbd table.board-table td {
+	font-size: 32px;
+	line-height: 36px;
+	padding: 8px 24px;
+	color: var(--ink);
+	border-bottom: 2px solid var(--ega-dark);
+}
+body.rbd table.board-table td.rank {
+	color: var(--ink-dim);
+}
+body.rbd table.board-table td.score {
+	color: var(--accent-2);
+}
+body.rbd.mono table.board-table td {
+	font-weight: bold;
+}
+/* strict: the 2-on-2-off dotted rule, the way a 320x200 game drew one */
+body.rbd.strict table.board-table td {
+	border-bottom: none;
+	background-image: repeating-linear-gradient(90deg, var(--rule) 0 2px, transparent 2px 4px);
+	background-size: 100% 2px;
+	background-position: 0 100%;
+	background-repeat: no-repeat;
+	padding: 8px 24px 10px;
+}
+body.rbd.strict table.board-table td.score {
+	color: var(--verb);
+}
+
+/* ---- the door: the one button, the code, the host's small link ---- */
+body.rbd .btn.big {
+	font-size: 16px;
+	line-height: 20px;
+	padding: 10px 24px;
+}
+/* the code stays black on white: that is what every phone camera reads
+   best, and both are palette colours. The frame is the skin's. */
+body.rbd .qr {
+	border: var(--edge) solid var(--ega-brightcyan);
+	background: var(--ega-white);
+	padding: 8px;
+	box-sizing: content-box;
+	margin: 24px auto 8px;
+}
+body.rbd .qr img {
+	image-rendering: pixelated;
+}
+body.rbd.strict .qr {
+	border-color: var(--voice);
+}
+body.rbd .hostdoor {
+	border-top: 2px dotted var(--ega-dark);
+	margin-top: 32px;
+	padding-top: 12px;
+}
+body.rbd input[type="password"] {
+	background: var(--ega-black);
+	color: var(--ega-brightgreen);
+	border: var(--edge) solid var(--ega-brightcyan);
+	border-radius: 0;
+	font: inherit;
+}
+body.rbd.strict input[type="password"] {
+	background: var(--ground);
+	color: var(--ink);
+	border: 2px solid var(--panel);
+	caret-color: var(--voice);
+}
+body.rbd .hostdoor button {
+	font: inherit;
+}
+body.rbd #err {
+	color: var(--ega-brightred) !important;
+}
+
+/* ---- the TV join screen: the address, big, under the code ---- */
+body.rbd .url {
+	color: var(--accent-2);
+	font-size: 32px;
+	line-height: 36px;
+}
+body.rbd.strict .url {
+	color: var(--verb);
+}
+body.rbd.tv .brand {
+	font-size: 64px;
+	line-height: 68px;
+}

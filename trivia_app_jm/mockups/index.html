@@ -5,21 +5,35 @@
 		<meta name="viewport" content="width=device-width, initial-scale=1" />
 		<title>Trivia — Join</title>
 		<link rel="stylesheet" href="styles.css" />
+		<!-- the birthday skin and its two switches, applied when <body> carries rbd / mono / strict -->
+		<link rel="stylesheet" href="rbd.css" />
+		<link rel="stylesheet" href="rbd-strict.css" />
+		<link rel="stylesheet" href="rbd-font.css" />
+		<link rel="stylesheet" href="rbd-screens.css" />
 	</head>
-	<body>
+	<body class="door">
 		<!-- One site, two doors (spec: "Entry model"). The doors are deliberately
 		     NOT symmetrical: every guest uses the player door, and exactly one
 		     person ever uses the host door. A guest who taps "Host" gets a
 		     passphrase box they cannot satisfy, which reads as broken, so the host
 		     entrance is a small link rather than a matching button.
 
-		     Mock divergence from the spec: the player button goes straight through
-		     rather than asking for the lobby password (imstupid). In the real app
-		     that password is the room identifier and still gates entry; the QR
-		     embeds it so scanning bypasses the field anyway. -->
+		     Players need no password: the host's Open room switch is the only
+		     gate. The host passphrase stays, and only guards the host door. -->
+		<script>
+			// ?mock (or a file URL): the door to the design playground and its wall.
+			// Otherwise: the real door, in front of the live game.
+			const PARAMS = new URLSearchParams(location.search);
+			const MOCK = PARAMS.has("mock") || location.protocol === "file:";
+			document.body.classList.toggle("live", !MOCK);
+			// ?tv=1: the join screen for the TV. The address and the code in the
+			// phones' style, nothing else: no button, no host entrance.
+			const TV = PARAMS.has("tv");
+			document.body.classList.toggle("tv", TV);
+		</script>
 		<div class="card">
 			<p class="brand">Trivia</p>
-			<p class="sub">Scan the code, or tap below</p>
+			<p class="sub" id="sub">Scan the code, or tap below</p>
 
 			<div class="row">
 				<a class="btn big" id="joinLink" href="devices.html">Join as a player</a>
@@ -30,7 +44,7 @@
 			<div class="qr">
 				<img id="qr" alt="QR to join" />
 			</div>
-			<p class="note">Scan to join on a phone (placeholder)</p>
+			<p class="url" id="url"></p>
 
 			<!-- The host entrance. Tucked under a rule, muted, no button chrome. -->
 			<div class="hostdoor">
@@ -52,6 +66,7 @@
 			&nbsp; <label><input type="checkbox" id="rbdToggle" /> Birthday skin <span class="muted">— the wall opens rbd_player</span></label>
 		</div>
 
+		<script src="live.js"></script>
 		<script>
 			// The room gate. localStorage stands in for the server's answer, and is
 			// shared with the player page so the two agree in the mock.
@@ -65,7 +80,16 @@
 			};
 			const joinLink = document.getElementById("joinLink");
 			const openToggle = document.getElementById("openToggle");
+			let roomLive = null; // live: the room's answer, once it has arrived
 			function paintRoom() {
+				if (!MOCK) {
+					const open = roomLive !== false; // until the room answers, the door is open
+					joinLink.href = "player.html";
+					joinLink.classList.toggle("disabled", !open);
+					joinLink.textContent = open ? "Join as a player" : "Room not open";
+					document.getElementById("shut").style.display = open ? "none" : "";
+					return;
+				}
 				const open = roomOpen();
 				openToggle.checked = open;
 				joinLink.classList.toggle("disabled", !open);
@@ -73,7 +97,7 @@
 				document.getElementById("shut").style.display = open ? "none" : "";
 			}
 			joinLink.addEventListener("click", (e) => {
-				if (!roomOpen()) e.preventDefault(); // the server would reject the JOIN anyway
+				if (MOCK ? !roomOpen() : roomLive === false) e.preventDefault(); // the server would reject the JOIN anyway
 			});
 			openToggle.addEventListener("change", () => {
 				try {
@@ -85,8 +109,7 @@
 			window.addEventListener("storage", (e) => e.key === ROOM_KEY && paintRoom());
 			paintRoom();
 
-			// Hardcoded for now, per spec. The player password (imstupid) is the room
-			// identifier in the real app; the host passphrase is independent of it.
+			// The host passphrase guards the host door only. Players have no password.
 			const HOST_PASSPHRASE = "imwithstupid";
 			const TOKEN_KEY = "hostToken";
 
@@ -100,12 +123,13 @@
 			// battery-death recovery path, so the token is a convenience, not a key.
 			let token = null;
 			try {
-				token = localStorage.getItem(TOKEN_KEY);
+				token = MOCK ? localStorage.getItem(TOKEN_KEY) : localStorage.getItem("hostKey");
 			} catch {}
 			if (token) hostLink.textContent = "Continue as host";
 
 			function enterHost() {
-				location.href = "host.html?code=" + encodeURIComponent(HOST_PASSPHRASE);
+				// live: the host page presents the passphrase to the room; a wrong one is refused there
+				location.href = MOCK ? "host.html?code=" + encodeURIComponent(HOST_PASSPHRASE) : "host.html";
 			}
 
 			hostLink.addEventListener("click", (e) => {
@@ -124,6 +148,12 @@
 			});
 			hostForm.addEventListener("submit", (e) => {
 				e.preventDefault();
+				if (!MOCK) {
+					try {
+						localStorage.setItem("hostKey", pass.value.trim());
+					} catch {}
+					return enterHost();
+				}
 				if (pass.value.trim() !== HOST_PASSPHRASE) {
 					err.style.display = "block";
 					pass.select();
@@ -149,25 +179,60 @@
 			const $note = document.getElementById("wallNote");
 			const oneLink = { set href(v) {} }; // the link is rebuilt inside the note
 			function paintSkin() {
+				if (!MOCK) {
+					$note.style.display = "none"; // the live door is for guests: no playground, no wall
+					return;
+				}
 				const on = rbdOn();
 				rbdToggle.checked = on;
-				oneLink.href = (on ? "rbd_player.html" : "player.html") + "?code=imstupid";
-				$note.innerHTML = `Opens the device wall — every screen size at once, ${on ? "in the <b>birthday skin</b>" : "in the plain skin"}. <a class="plain" id="oneLink" href="${on ? "rbd_player.html" : "player.html"}?code=imstupid">One phone only</a>`;
+				oneLink.href = on ? "rbd_player.html" : "player.html";
+				$note.innerHTML = `Opens the device wall — every screen size at once, ${on ? "in the <b>birthday skin</b>" : "in the plain skin"}. <a class="plain" id="oneLink" href="${on ? "rbd_player.html" : "player.html"}">One phone only</a>`;
 			}
 			rbdToggle.addEventListener("change", () => {
 				try {
 					localStorage.setItem(RBD_KEY, rbdToggle.checked ? "1" : "0");
 				} catch {}
 				paintSkin();
+				mockSkin();
 			});
 			window.addEventListener("storage", (e) => e.key === RBD_KEY && paintSkin());
 			paintSkin();
 
+			// The door dresses like the phones. Live, the room says which skin, which
+			// face and whether the strict layer is on; in the mock those are the device
+			// wall's flags, so the playground's door matches its phones.
+			function applySkin(st) {
+				document.body.classList.toggle("rbd", !!st.birthdayMode);
+				document.body.classList.toggle("mono", st.egaFont === "mono");
+				document.body.classList.toggle("strict", !!st.egaStrict);
+			}
+			function mockSkin() {
+				try {
+					applySkin({ birthdayMode: rbdOn(), egaFont: localStorage.getItem("mockEgaFont"), egaStrict: localStorage.getItem("mockEgaStrict") === "1" });
+				} catch {}
+			}
+			window.addEventListener("storage", (e) => MOCK && ["mockEgaFont", "mockEgaStrict"].includes(e.key) && mockSkin());
+			if (MOCK) mockSkin();
+			else
+				TriviaLive.connect({
+					role: "board", // the door only watches: no key, nothing to send
+					onSnapshot: (s) => {
+						applySkin(s.settings ?? {});
+						roomLive = !!s.open;
+						paintRoom();
+					},
+				});
+			if (TV) document.getElementById("sub").textContent = "Scan the code, or type the address";
+
 			// The QR still encodes the single-phone path: something scanning this is a
 			// real phone and wants the app, not the wall of emulated ones.
-			const target = new URL("player.html?code=imstupid", location.href).href;
+			// Live it encodes the short route, /play, which is also what the TV shows
+			// in words for anyone whose camera won't play along.
+			const target = MOCK ? new URL("player.html?mock", location.href).href : new URL("/play", location.href).href;
+			document.getElementById("url").textContent = MOCK ? "" : location.host + "/play";
 			const qr = document.getElementById("qr");
-			qr.src = "https://api.qrserver.com/v1/create-qr-code/?size=150x150&data=" + encodeURIComponent(target);
+			const px = TV ? 320 : 150;
+			qr.src = `https://api.qrserver.com/v1/create-qr-code/?size=${px}x${px}&qzone=1&data=` + encodeURIComponent(target);
 			qr.onerror = () => {
 				qr.replaceWith(
 					Object.assign(document.createElement("div"), {

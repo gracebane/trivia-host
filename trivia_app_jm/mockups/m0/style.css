@@ -1,0 +1,155 @@
+:root {
+	--ink: #16181d;
+	--dim: #6b7080;
+	--line: #dfe2ea;
+	--ground: #f6f7fa;
+	--card: #fff;
+	--ok: #1f8a4c;
+	--no: #c2362b;
+	--live: #1f8a4c;
+	--warn: #b7791f;
+}
+* {
+	box-sizing: border-box;
+}
+/* The hidden attribute must win. `.card { display: flex }` below outranks the
+   browser's own [hidden] rule, which left the host controls on screen before
+   sign-in: buttons that looked live with no connection behind them. */
+[hidden] {
+	display: none !important;
+}
+
+body {
+	margin: 0;
+	font: 17px/1.4 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+	background: var(--ground);
+	color: var(--ink);
+}
+main {
+	max-width: 520px;
+	margin: 0 auto;
+	padding: 16px;
+	display: flex;
+	flex-direction: column;
+	gap: 14px;
+}
+.bar {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	gap: 8px;
+	font-size: 14px;
+	color: var(--dim);
+}
+.pill {
+	padding: 3px 10px;
+	border-radius: 99px;
+	font-size: 13px;
+	font-weight: 600;
+	color: #fff;
+	background: var(--warn);
+}
+.pill.live {
+	background: var(--live);
+}
+.pill.failed {
+	background: var(--no);
+}
+.card {
+	background: var(--card);
+	border: 1px solid var(--line);
+	border-radius: 10px;
+	padding: 16px;
+	display: flex;
+	flex-direction: column;
+	gap: 10px;
+}
+h1 {
+	font-size: 22px;
+	margin: 0;
+}
+h2 {
+	font-size: 15px;
+	margin: 0;
+	color: var(--dim);
+	text-transform: uppercase;
+	letter-spacing: 0.06em;
+}
+input[type="text"],
+input[type="password"] {
+	font-size: 17px; /* 16+ stops iOS zooming on focus */
+	padding: 10px;
+	border: 1px solid var(--line);
+	border-radius: 8px;
+	width: 100%;
+}
+button {
+	font: inherit;
+	font-weight: 600;
+	padding: 10px 14px;
+	border-radius: 8px;
+	border: 1px solid var(--ink);
+	background: var(--ink);
+	color: #fff;
+}
+button.ghost {
+	background: #fff;
+	color: var(--ink);
+}
+button:disabled {
+	opacity: 0.4;
+}
+.row {
+	display: flex;
+	gap: 8px;
+	align-items: center;
+}
+.muted {
+	color: var(--dim);
+	font-size: 14px;
+}
+.ok {
+	color: var(--ok);
+	font-weight: 700;
+}
+.no {
+	color: var(--no);
+	font-weight: 700;
+}
+.log {
+	font: 12px/1.5 ui-monospace, Menlo, monospace;
+	color: var(--dim);
+	white-space: pre-line;
+}
+table {
+	width: 100%;
+	border-collapse: collapse;
+	font-size: 15px;
+}
+td {
+	padding: 6px 4px;
+	border-top: 1px solid var(--line);
+	vertical-align: middle;
+}
+.dot {
+	display: inline-block;
+	width: 9px;
+	height: 9px;
+	border-radius: 50%;
+	background: var(--line);
+	margin-right: 6px;
+}
+.dot.on {
+	background: var(--live);
+}
+.toast {
+	position: fixed;
+	left: 50%;
+	bottom: 20px;
+	transform: translateX(-50%);
+	background: var(--ink);
+	color: #fff;
+	padding: 10px 16px;
+	border-radius: 8px;
+	font-size: 15px;
+}

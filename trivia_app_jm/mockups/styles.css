@@ -974,6 +974,39 @@ table.gridedit input[type="text"] {
 }
 
 /* the bracket around one grid row's worth of elements */
+/* the review queue's marking grid for list answers: one box per element */
+.markwrap {
+	overflow-x: auto;
+	max-width: 100%;
+}
+table.markgrid {
+	border-collapse: separate;
+	border-spacing: 4px;
+	margin: 0 -4px;
+}
+table.markgrid td {
+	padding: 0;
+	border: 0;
+	vertical-align: top;
+}
+table.markgrid .el {
+	display: block;
+	min-width: 96px;
+	max-width: 220px;
+	min-height: 30px;
+	padding: 5px 8px;
+	margin: 0;
+	text-align: left;
+}
+table.markgrid .el.blank {
+	color: #bbb;
+	border-style: dashed;
+}
+table.markgrid .el[data-mark]:focus-visible {
+	outline: 2px solid #1a73e8;
+	outline-offset: 1px;
+}
+
 .elrow {
 	white-space: nowrap;
 }
@@ -1259,6 +1292,10 @@ img.hat.hat-pirate {
 	width: 27px;
 	vertical-align: -3px;
 }
+img.hat.star {
+	width: 27px;
+	vertical-align: -5px;
+}
 
 /* phone: team picker — one rectangle per team, plus one to start a new team */
 .teamgrid {
@@ -1513,10 +1550,19 @@ button.iconbtn.on {
 	#crewbar {
 		padding-top: 4px;
 	}
-	/* the crew list right above already names everyone, so the mutiny list
-	   tightens to its own rows rather than repeating at full height */
+	/* One name per row costs five rows for five mutineers, which is what tipped
+	   the short phones over. Wrapping them inline keeps every name and the
+	   bandana beside it, in one or two lines instead of five. */
+	#mutinyPanel .roster {
+		display: flex;
+		flex-wrap: wrap;
+		gap: 0 10px;
+	}
 	#mutinyPanel .roster li {
-		padding: 1px 4px;
+		display: inline-flex;
+		width: auto;
+		padding: 1px 0;
+		background-image: none;
 	}
 	#mutinyPanel p {
 		font-size: 11px;
@@ -1552,4 +1598,111 @@ button.iconbtn.on {
 	.qnum {
 		margin: 0;
 	}
+}
+
+/* the Reilly preview stage in session settings */
+.saystage {
+	margin-top: 6px;
+	padding: 10px 12px;
+	min-height: 54px;
+	border: 1px solid #ddd;
+	border-radius: 6px;
+	background: #111;
+	color: #fff;
+	font-size: 14px;
+	line-height: 1.35;
+	display: flex;
+	flex-direction: column;
+	gap: 4px;
+}
+.saystage.empty {
+	background: #222;
+	color: #777;
+}
+.saystage .muted {
+	font-size: 11px;
+	color: #888;
+}
+
+/* ---- the TV join screen (index.html?tv=1): the address and the code, nothing else ---- */
+body.tv .row,
+body.tv .hostdoor,
+body.tv #wallNote,
+body.tv .simbar {
+	display: none;
+}
+body.tv .card {
+	width: min(720px, 100%);
+}
+body.tv .brand {
+	font-size: 56px;
+}
+body.tv .qr {
+	width: 320px;
+	height: 320px;
+	margin-top: 24px;
+}
+.url {
+	font-size: 28px;
+	margin: 12px 0 0;
+	word-break: break-all;
+}
+body:not(.tv) .url {
+	display: none;
+}
+
+/* ---- live mode ---- */
+/* On an actual phone there is no bezel to draw: the viewport IS the phone.
+   The laptop keeps the frame (that is the mockup), a narrow or touch screen
+   fills itself edge to edge, the way the device wall's iframes already do.
+   dvh follows the browser chrome as it collapses; vh is the fallback. */
+@media (max-width: 520px), (pointer: coarse) and (max-width: 900px) {
+	body.live.player {
+		background: #fff;
+		justify-content: flex-start;
+		padding: 0;
+		margin: 0;
+		min-height: 100vh;
+		min-height: 100dvh;
+		overscroll-behavior: none; /* no rubber-banding the whole page on iOS */
+	}
+	body.live .phone {
+		height: 100vh;
+		height: 100dvh;
+		width: 100%;
+		aspect-ratio: auto;
+		border: 0;
+		border-radius: 0;
+		box-shadow: none;
+	}
+	body.live .phone::before {
+		display: none;
+	}
+	body.live .screen {
+		padding: calc(10px + env(safe-area-inset-top, 0px)) calc(14px + env(safe-area-inset-right, 0px)) calc(12px + env(safe-area-inset-bottom, 0px)) calc(14px + env(safe-area-inset-left, 0px));
+	}
+}
+body.live .simbar {
+	display: none; /* the fake engine's controls; ?dev brings them back */
+}
+body.live.dev .simbar {
+	display: block;
+}
+.net {
+	font-size: 11px;
+	color: #b7791f;
+	white-space: nowrap;
+}
+.toast {
+	position: fixed;
+	left: 50%;
+	bottom: 18px;
+	transform: translateX(-50%);
+	background: #111;
+	color: #fff;
+	padding: 9px 14px;
+	border-radius: 8px;
+	font-size: 14px;
+	z-index: 20;
+	max-width: 90vw;
 }

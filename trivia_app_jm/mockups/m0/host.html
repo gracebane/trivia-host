@@ -1,0 +1,135 @@
+<!doctype html>
+<html lang="en">
+	<head>
+		<meta charset="utf-8" />
+		<meta name="viewport" content="width=device-width, initial-scale=1" />
+		<title>M0 — Host</title>
+		<link rel="stylesheet" href="style.css" />
+	</head>
+	<body>
+		<!-- M0 test page. Throwaway: M8 replaces it with the real host.html. -->
+		<main>
+			<div class="bar"><span>Trivia · M0 host</span><span class="pill" id="pill">connecting</span></div>
+			<div class="card" id="gate" hidden>
+				<h1>Host passphrase</h1>
+				<input type="password" id="pass" autocomplete="current-password" />
+				<button id="enter">Enter</button>
+			</div>
+			<div class="card" id="controls" hidden>
+				<h2 id="phase"></h2>
+				<p id="prompt"></p>
+				<div class="row">
+					<button id="room">Open room</button>
+					<button class="ghost" id="load">Load sample pack</button>
+				</div>
+				<div class="row">
+					<button id="open">Start</button>
+					<button class="ghost" id="close">Close question</button>
+					<button class="ghost" id="reset">New game</button>
+				</div>
+			</div>
+			<div class="card" id="answersCard" hidden>
+				<h2>Answers</h2>
+				<table><tbody id="answers"></tbody></table>
+			</div>
+			<div class="card" id="rosterCard" hidden>
+				<h2>Players</h2>
+				<table><tbody id="roster"></tbody></table>
+			</div>
+			<div class="card">
+				<h2>Connection log</h2>
+				<div class="log" id="log"></div>
+			</div>
+		</main>
+		<script src="../live.js"></script>
+		<script type="module">
+			const { connect } = window.TriviaLive;
+			const $ = (s) => document.querySelector(s);
+			const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]);
+
+			// The passphrase is remembered on this laptop so a refresh doesn't re-prompt.
+			const key = localStorage.getItem("hostKey") || "";
+			if (!key) {
+				// no socket is opened until the passphrase is in, so don't claim to be connecting
+				$("#pill").textContent = "signed out";
+				$("#gate").hidden = false;
+				$("#enter").onclick = () => {
+					localStorage.setItem("hostKey", $("#pass").value);
+					location.reload();
+				};
+				$("#pass").addEventListener("keydown", (e) => {
+						if (e.key === "Enter") $("#enter").click();
+					});
+			} else start(key);
+
+			function start(key) {
+				let state = null;
+				const room = connect({
+					role: "host",
+					key,
+					onSnapshot: (s) => ((state = s), render(state)),
+					onError: (e) => alert(e.message),
+					onStatus: (status, events) => {
+						$("#pill").textContent = status;
+						$("#pill").className = "pill " + status;
+						$("#log").textContent = events.join("\n");
+						if (status === "failed") {
+							localStorage.removeItem("hostKey"); // wrong passphrase: ask again
+							$("#gate").hidden = false;
+						}
+					},
+				});
+				$("#room").onclick = () => room.send({ t: state.game.open ? "room.close" : "room.open" });
+				$("#load").onclick = () =>
+					room.send({
+						t: "questions.load",
+						pack: {
+							questions: [
+								{ id: "q1", prompt: "What is the capital of Australia?", answers: ["Canberra"], guesses: 2, points: [8, 4] },
+								{ id: "q2", prompt: "Who painted the Sistine Chapel ceiling?", answers: ["Michelangelo"], guesses: 2, points: [8, 4] },
+								{ id: "q3", prompt: "Name three countries and their capitals", kind: "list", pointsPer: 2, orderX: true, grid: [[["France"], ["Paris"]], [["Japan"], ["Tokyo"]], [["Peru"], ["Lima"]]], guesses: 1 },
+							],
+						},
+					});
+				$("#open").onclick = () => room.send({ t: state.game.phase === "lobby" ? "game.start" : "question.next" });
+				$("#close").onclick = () => room.send({ t: "question.close" });
+				$("#reset").onclick = () => room.send({ t: "game.reset" });
+
+				function render(s) {
+					for (const id of ["controls", "answersCard", "rosterCard"]) $("#" + id).hidden = false;
+					const g = s.game;
+					const q = g.cur >= 0 ? s.questions[g.cur] : null;
+					$("#phase").textContent = `${g.open ? "Room open" : "Room closed"} · ${g.phase}${q ? ` · Q${g.cur + 1} of ${s.questions.length}` : ` · ${s.questions.length} questions loaded`}`;
+					$("#room").textContent = g.open ? "Close room" : "Open room";
+					$("#prompt").innerHTML = q ? `<b>${esc(q.prompt)}</b><br><span class="muted">${q.kind === "list" ? "grid " + q.grid.map((r) => r.map((c) => c[0]).join(" / ")).join(" · ") : "Answer: " + esc(q.answers.join(", "))}</span>` : `<span class="muted">No question open.</span>`;
+					$("#open").textContent = g.phase === "lobby" ? "Start" : "Next question";
+					$("#open").disabled = g.phase === "collecting" || g.phase === "ended" || g.cur + 1 >= s.questions.length;
+					$("#close").disabled = g.phase !== "collecting";
+
+					const name = (pid) => s.players.find((p) => p.personId === pid)?.displayName ?? pid;
+					const rows = q ? s.log.filter((r) => r.questionId === q.id && !r.superseded) : [];
+					$("#answers").innerHTML = rows.length
+						? rows
+								.map((r) => {
+									const v = r.verdict;
+									const text = r.payload.text ?? r.payload.items?.join(", ");
+									const state = v.state === null ? "ungraded" : `${v.state}${v.confirmed ? "" : " · pending"}${v.count != null ? ` · ${v.count}/${v.outOf}` : ""}${v.distance != null ? ` · d${v.distance}` : ""}`;
+									return `<tr><td>${esc(name(r.personId))} <span class="muted">g${r.guessNo}</span></td><td><b>${esc(text)}</b><br><span class="muted">${state}</span></td>
+									<td class="row"><button class="${v.state === "correct" && v.confirmed ? "" : "ghost"}" data-r="${r.id}" data-v="correct">✓</button>
+									<button class="${v.state === "incorrect" && v.confirmed ? "" : "ghost"}" data-r="${r.id}" data-v="incorrect">✗</button>
+									<button class="ghost" data-sb="${r.unitId}" title="send back">↩</button></td></tr>`;
+								})
+								.join("")
+						: `<tr><td class="muted">No answers yet.</td></tr>`;
+					$("#answers").querySelectorAll("[data-r]").forEach((b) => (b.onclick = () => room.send({ t: "verdict.set", rowId: Number(b.dataset.r), state: b.dataset.v })));
+					$("#answers").querySelectorAll("[data-sb]").forEach((b) => (b.onclick = () => room.send({ t: "verdict.sendBack", questionId: q.id, unitId: b.dataset.sb })));
+
+					const score = Object.fromEntries(s.standings.map((x) => [x.personId, x.score]));
+					$("#roster").innerHTML = s.players.length
+						? s.players.map((p) => `<tr><td><span class="dot ${p.connected ? "on" : ""}"></span>${esc(p.displayName)}</td><td class="muted">${p.connected ? "connected" : "away"}</td><td><b>${score[p.personId] ?? 0}</b></td></tr>`).join("")
+						: `<tr><td class="muted">Nobody yet.</td></tr>`;
+				}
+			}
+		</script>
+	</body>
+</html>

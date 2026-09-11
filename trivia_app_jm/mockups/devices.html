@@ -187,7 +187,9 @@
 			// A cache buster per page load. Without it a browser happily serves the
 			// phone it fetched an hour ago and edits appear not to have landed.
 			const BUST = Date.now();
-			const phoneSrc = () => `${$("#rbd").checked ? "rbd_player" : "player"}.html?embed=1&v=${BUST}`;
+			// mock=1: the wall is the design playground, on the page's own fake
+			// engine and simulate bar; the live game is a different thing to look at.
+			const phoneSrc = () => `${$("#rbd").checked ? "rbd_player" : "player"}.html?embed=1&mock=1&v=${BUST}`;
 			const wall = $("#wall");
 			let frames = [];
 

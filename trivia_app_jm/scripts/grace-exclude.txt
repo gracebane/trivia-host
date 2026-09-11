@@ -32,6 +32,9 @@ assets/ega/hat/hat-pirate-red-21.png
 assets/ega/hat/hat-pirate-green-13.png
 assets/ega/hat/hat-pirate-green-17.png
 assets/ega/hat/hat-pirate-green-21.png
+assets/ega/hat/star-13.png
+assets/ega/hat/star-17.png
+assets/ega/hat/star-21.png
 assets/ega/hat/mutiny-plank-16.png
 assets/ega/hat/mutiny-plank-20.png
 assets/ega/hat/captain_ega_pixelated.png
